@@ -20,7 +20,6 @@ export const DEFAULT_OPTIONS = {
   sponsorblock: { mode: "off", categories: ["sponsor", "selfpromo", "interaction"] },
   rateLimit: "",
   concurrentFragments: 4,
-  useCookies: false,
   skipArchive: false,
   filenameTemplate: "",
   subfolder: "",

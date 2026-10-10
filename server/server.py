@@ -16,6 +16,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -24,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.1.1"
 BASE_DIR = Path(__file__).resolve().parent
 SETTINGS_FILE = BASE_DIR / "settings.json"
 JOBS_FILE = BASE_DIR / "jobs.json"
@@ -347,8 +348,6 @@ def build_args(opts: dict, job_dir: Path, temp_dir: Path | None = None, archive_
         a += ["-r", rate]
     frag = int(opts.get("concurrentFragments") or 4)
     a += ["-N", str(max(1, min(frag, 16)))]
-    if opts.get("useCookies") and SETTINGS.get("cookies_file"):
-        a += ["--cookies", SETTINGS["cookies_file"]]
     if opts.get("skipArchive"):
         a += ["--download-archive", str((archive_dir or download_root()) / "archive.txt")]
 
@@ -357,6 +356,26 @@ def build_args(opts: dict, job_dir: Path, temp_dir: Path | None = None, archive_
     a += list(SETTINGS.get("extra_args") or []) + site_args(url)
     a += ["--", url]
     return a
+
+
+def cookie_args(work: Path) -> list[str]:
+    """Kopiert cookies_file nach work/ – yt-dlp schreibt Cookies am Ende zurück; bei schreibgeschützter
+    oder gleichzeitig genutzter Originaldatei gab das „Errno 13 Permission denied“."""
+    src = Path(SETTINGS.get("cookies_file") or "")
+    if not str(src).strip() or str(src) == ".":
+        return []
+    if src.is_dir():
+        src = src / "cookies.txt"
+    if not src.is_file():
+        print(f"[Kinbox] cookies_file nicht gefunden: {src}", flush=True)
+        return []
+    work.mkdir(parents=True, exist_ok=True)
+    dst = work / "cookies.txt"
+    try:
+        shutil.copyfile(src, dst)
+    except OSError as e:
+        raise OptionError(f"Cookie-Datei nicht lesbar: {e}")
+    return ["--cookies", str(dst)]
 
 
 # --------------------------------------------------------------------------- #
@@ -551,7 +570,7 @@ def _run_job(job: Job):
         conv_type = (job.options.get("convert") or {}).get("type", "none")
         # Bei GIF/Verkleinern landet das Original erst im Arbeitsordner, damit sich Aufträge nicht in die Quere kommen
         work_dir = temp_dir / "out" if conv_type in ("gif", "small") else job_dir
-        args = build_args(job.options, work_dir, temp_dir, archive_dir=root)
+        args = cookie_args(temp_dir) + build_args(job.options, work_dir, temp_dir, archive_dir=root)
     except OptionError as e:
         job.status, job.error, job.stage = "error", str(e), "Fehler"
         return
@@ -1203,12 +1222,11 @@ def fetch_info(url: str, playlist: bool) -> dict:
         return hit[1]
     cmd = ytdlp_base() + ["-J", "--no-warnings", "--ignore-config", "--flat-playlist",
                           "--yes-playlist" if playlist else "--no-playlist"]
-    if SETTINGS.get("cookies_file"):
-        cmd += ["--cookies", SETTINGS["cookies_file"]]
-    cmd += list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
     kw = {"creationflags": 0x08000000} if IS_WINDOWS else {}
-    r = subprocess.run(cmd, capture_output=True, timeout=90,
-                       env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **kw)
+    with tempfile.TemporaryDirectory() as tmp:
+        cmd += cookie_args(Path(tmp)) + list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
+        r = subprocess.run(cmd, capture_output=True, timeout=90,
+                           env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **kw)
     if r.returncode != 0:
         err = r.stderr.decode("utf-8", "replace").strip().splitlines()
         msg = next((l[6:].strip() for l in reversed(err) if l.startswith("ERROR:")), err[-1] if err else "Unbekannter Fehler")

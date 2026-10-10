@@ -90,7 +90,7 @@ This file is created on first start. Restart the server after editing it.
 | `site_args` | extra arguments for specific sites (includes a TikTok fix) |
 | `night` | night window, e.g. `{"start": "01:00", "end": "07:00"}` |
 
-**Cookies:** export a `cookies.txt` with an extension like "Get cookies.txt LOCALLY", put it on the server, set `cookies_file`, then tick "Advanced" → "Use the server's cookies" in the popup.
+**Cookies:** export a `cookies.txt` with an extension like "Get cookies.txt LOCALLY", put it on the server, set `cookies_file` – that's it. Kinbox then uses them automatically for every download (phone shortcuts included). You may also point it at the folder containing `cookies.txt`.
 
 ## Troubleshooting
 

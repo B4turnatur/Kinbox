@@ -126,7 +126,7 @@ Wird beim ersten Start angelegt. Nach Änderungen den Server neu starten.
 | `site_args` | Zusätzliche Argumente nur für bestimmte Seiten (enthält schon einen TikTok-Fix) |
 | `night` | Nachtfenster, z. B. `{"start": "01:00", "end": "07:00"}` |
 
-**Cookies (für Instagram und den YouTube-Bot-Check):** Mit einer Erweiterung wie „Get cookies.txt LOCALLY" eine `cookies.txt` exportieren, auf den Server legen, Pfad in `cookies_file` eintragen und im Popup unter „Erweitert" → „Cookies des Servers nutzen" anhaken.
+**Cookies (für Instagram und den YouTube-Bot-Check):** Mit einer Erweiterung wie „Get cookies.txt LOCALLY" eine `cookies.txt` exportieren, auf den Server legen, Pfad in `cookies_file` eintragen – fertig. Kinbox nutzt sie dann automatisch für alle Downloads (auch vom Handy). Statt der Datei darf auch ihr Ordner angegeben werden.
 
 ## Wenn etwas nicht geht
 

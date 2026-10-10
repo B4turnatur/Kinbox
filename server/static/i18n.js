@@ -44,7 +44,7 @@
     "Alles in einen Ordner": "Everything in one folder", "Nach Kanal / Account": "By channel / account",
     "Plex / Jellyfin (Kanal › Jahr › Folge)": "Plex / Jellyfin (channel › year › episode)", "Musik (Interpret › Titel)": "Music (artist › title)",
     "Unterordner auf dem Server": "Subfolder on the server", "z. B. Musik/Playlists": "e.g. Music/Playlists", "Dateiname": "File name",
-    "Tempolimit": "Speed limit", "Parallele Teile": "Parallel fragments", "Cookies des Servers nutzen (Alters-/Mitgliedervideos)": "Use the server's cookies (age-restricted/members-only videos)",
+    "Tempolimit": "Speed limit", "Parallele Teile": "Parallel fragments",
     "Schon geladene Videos überspringen (Archiv)": "Skip videos already downloaded (archive)", "Auf diesen PC": "To this PC", "Auf PC": "To PC",
     "Download startet erst im Nachtfenster (Einstellungen)": "Download only starts in the night window (settings)", "Nachts": "At night",
     "nachts": "at night", "Preset": "Preset", "Als Preset": "As preset", "Erledigte entfernen": "Remove finished", "Noch keine Downloads.": "No downloads yet.",

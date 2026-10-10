@@ -165,6 +165,7 @@ Jede Person hat ihren **eigenen Bereich**: eigener Ordner, eigene Mediathek, eig
 | **Presets** | 9 eingebaute (u. a. WhatsApp, GIF, Musik mit Tags) + beliebig viele eigene |
 | **Schnellzugriff** | „Kinbox"-Button unter YouTube-Videos, schwebender Button auf TikTok, Instagram, X und Reddit, Rechtsklick, Tastenkürzel |
 | **Benachrichtigung** | wenn fertig – mit Knopf „Auf diesen PC speichern" |
+| **Aussehen** | vier Stile (Klassisch, Schlicht, Papier, Terminal) und acht Farben, schlichte Linien-Icons – Erweiterung: *Einstellungen → Aussehen*, Mediathek (pro Profil): *dein Profil → Aussehen* |
 
 Tastenkürzel: **Alt+Shift+D** Popup · **Alt+Shift+Q** aktuelle Seite sofort laden · **Alt+Shift+M** als MP3. Unter `chrome://extensions/shortcuts` änderbar.
 

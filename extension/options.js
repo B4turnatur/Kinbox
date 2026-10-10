@@ -14,6 +14,7 @@ async function init() {
   $("#notify").checked = settings.notify;
   $("#showSocialButtons").checked = settings.showSocialButtons;
   renderPresets();
+  renderLook();
   if (settings.serverUrl) test(false);
 
   $("#test").addEventListener("click", () => test(true));
@@ -196,6 +197,24 @@ function renderPresets() {
     } else return;
     renderPresets();
   };
+}
+
+const ACCENTS = [
+  ["#7c5cff", "Violett"], ["#3d6af2", "Blau"], ["#11968a", "Petrol"], ["#2f9e44", "Grün"],
+  ["#e8590c", "Orange"], ["#e03131", "Rot"], ["#d6336c", "Pink"], ["#5c5f66", "Graphit"],
+];
+
+function renderLook() {
+  const box = $("#accents");
+  box.innerHTML = ACCENTS.map(([c, n]) => `<button data-accent="${c}" title="${t(n)}" style="background:${c}"></button>`).join("");
+  const mark = () => {
+    for (const b of document.querySelectorAll("#looks .look")) b.classList.toggle("active", b.dataset.style === settings.style);
+    for (const b of box.children) b.classList.toggle("active", b.dataset.accent === settings.accent);
+  };
+  const set = (patch) => { Object.assign(settings, patch); kbLook(settings); saveSettings(patch); mark(); };
+  $("#looks").addEventListener("click", (e) => { const b = e.target.closest(".look"); if (b) set({ style: b.dataset.style }); });
+  box.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) set({ accent: b.dataset.accent }); });
+  mark();
 }
 
 function flash(el, text) {

@@ -5,7 +5,7 @@
   align-items: center;
   height: 32px;
   border-radius: 16px;
-  background: linear-gradient(135deg, #7c5cff, #b24cff);
+  background: linear-gradient(135deg, var(--kb-accent, #7c5cff), oklch(from var(--kb-accent, #7c5cff) l c calc(h + 28)));
   color: #fff;
   box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
   font: 600 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -55,4 +55,10 @@
   color: #ececf1;
 }
 #kinbox-float .kinbox-f-menu button:hover { background: #2d2d35; }
-#kinbox-float .kinbox-f-menu .kinbox-f-accent { color: #b8a6ff; border-top: 1px solid #333; border-radius: 0 0 8px 8px; margin-top: 4px; }
+#kinbox-float .kinbox-f-menu .kinbox-f-accent { color: color-mix(in oklab, var(--kb-accent, #7c5cff) 65%, white); border-top: 1px solid #333; border-radius: 0 0 8px 8px; margin-top: 4px; }
+
+/* Stile aus Einstellungen → Aussehen (data-kb-style setzt das Content-Skript) */
+html[data-kb-style=clean] #kinbox-float, html[data-kb-style=mono] #kinbox-float { background: var(--kb-accent, #7c5cff); }
+html[data-kb-style=paper] #kinbox-float { background: #211d16; }
+html[data-kb-style=mono] #kinbox-float, html[data-kb-style=mono] #kinbox-float button { border-radius: 2px !important; font-family: ui-monospace, Consolas, monospace; }
+.kb-i { width: 16px; height: 16px; flex: none; }

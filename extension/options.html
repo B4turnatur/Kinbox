@@ -3,17 +3,19 @@
 <head>
 <meta charset="utf-8">
 <title>Kinbox – Einstellungen</title>
+<link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="ui.css">
+<script src="lib/theme.js"></script>
 <style>
   body { max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; font-size: 14px; }
   h1 { display: flex; align-items: center; gap: 10px; font-size: 22px; margin: 0 0 22px; }
   h1 .logo { width: 34px; height: 34px; font-size: 18px; border-radius: 10px; }
   h2 { font-size: 15px; margin: 0 0 12px; }
-  .panel { background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .panel { background: var(--bg2); border: 1px solid var(--line); border-radius: calc(var(--radius) + 2px); padding: 18px; margin-bottom: 16px; }
   .panel p { color: var(--muted); margin: 0 0 12px; }
   .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
   .row .field { flex: 1; min-width: 180px; margin: 0; }
-  .btn { background: var(--bg3); border: 1px solid var(--line); border-radius: 9px; padding: 8px 14px; font-weight: 600; }
+  .btn { background: var(--bg3); border: 1px solid var(--line); border-radius: min(9px, var(--round)); padding: 8px 14px; font-weight: 600; }
   .btn:hover { border-color: var(--accent); }
   .btn.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
   .result { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg3); display: none; white-space: pre-wrap; }
@@ -23,15 +25,26 @@
   .check b { font-weight: 600; }
   .yes { color: var(--ok); } .no { color: var(--err); }
   .plist { display: flex; flex-direction: column; gap: 6px; }
-  .pitem { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg3); border-radius: 9px; }
+  .pitem { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg3); border-radius: min(9px, var(--round)); }
   .pitem .n { flex: 1; }
   .pitem .d { color: var(--muted); font-size: 12px; }
   code { background: var(--bg3); padding: 1px 5px; border-radius: 4px; }
   .muted { color: var(--muted); }
+  .looks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+  .look { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; text-align: left; display: flex; flex-direction: column; gap: 6px; outline: 2px solid transparent; outline-offset: 2px; }
+  .look.active { outline-color: var(--accent); }
+  .look i { display: block; height: 8px; border-radius: min(4px, var(--round)); background: var(--bg3); }
+  .look i:nth-child(2) { width: 60%; }
+  .look i.b { height: 16px; background: var(--grad); }
+  .look b { font-weight: 600; margin-top: 2px; }
+  .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+  .swatches button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--bg2); outline: 2px solid transparent; }
+  .swatches button.active { outline-color: var(--text); }
+  @media (max-width: 560px) { .looks { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
 <body>
-<h1><span class="logo">⬇</span> Kinbox</h1>
+<h1><span class="logo"><svg class="i"><use href="icons.svg#logo"/></svg></span> Kinbox</h1>
 
 <section class="panel">
   <h2>1. Mit deinem Server verbinden</h2>
@@ -42,7 +55,7 @@
     <button class="btn accent" id="test">Speichern &amp; testen</button>
   </div>
   <div class="result" id="testResult"></div>
-  <div class="row" style="margin-top:12px" id="libRow" hidden><button class="btn accent" id="openLibrary">📚 Mediathek öffnen</button></div>
+  <div class="row" style="margin-top:12px" id="libRow" hidden><button class="btn accent" id="openLibrary"><svg class="i"><use href="icons.svg#library"/></svg> Mediathek öffnen</button></div>
 </section>
 
 <section class="panel" id="serverPanel" hidden>
@@ -63,7 +76,7 @@
 </section>
 
 <section class="panel" id="cleanupPanel" hidden>
-  <h2>🧹 Automatisch aufräumen</h2>
+  <h2><svg class="i"><use href="icons.svg#eraser"/></svg> Automatisch aufräumen</h2>
   <p>Gilt nur für <b>deine</b> Dateien. Jederzeit umschaltbar und frei kombinierbar. Gelöscht werden nur Dateien, die Kinbox selbst geladen hat – und nie welche, die du in der Mediathek mit 📌 markiert hast.</p>
   <label class="switch"><input type="checkbox" id="cAfter"><span></span>Löschen, sobald ich die Datei auf PC oder Handy geladen habe</label>
   <div class="row" style="margin-top:8px">
@@ -71,7 +84,7 @@
     <label class="field">Speicherlimit in GB <small class="muted">(0 = aus, älteste zuerst)</small><input type="number" id="cGb" min="0" step="1"></label>
   </div>
   <div id="nightBox">
-  <h2 style="margin-top:18px">🌙 Nachts laden</h2>
+  <h2 style="margin-top:18px"><svg class="i"><use href="icons.svg#moon"/></svg> Nachts laden</h2>
   <p>Downloads mit „Nachts" starten erst in diesem Zeitfenster (gilt für die ganze Familie).</p>
   </div>
   <div class="row">
@@ -95,7 +108,20 @@
 </section>
 
 <section class="panel">
-  <h2>4. Presets</h2>
+  <h2>4. Aussehen</h2>
+  <label class="lbl">Stil</label>
+  <div class="looks" id="looks">
+    <button class="look" data-style="classic"><i></i><i></i><i class="b"></i><b>Klassisch</b></button>
+    <button class="look" data-style="clean"><i></i><i></i><i class="b"></i><b>Schlicht</b></button>
+    <button class="look" data-style="paper"><i></i><i></i><i class="b"></i><b>Papier</b></button>
+    <button class="look" data-style="mono"><i></i><i></i><i class="b"></i><b>Terminal</b></button>
+  </div>
+  <label class="lbl">Farbe</label>
+  <div class="swatches" id="accents"></div>
+</section>
+
+<section class="panel">
+  <h2>5. Presets</h2>
   <p>Eigene Presets legst du im Popup über „★ Als Preset" an. Dort kannst du sie auch als Standard festlegen.</p>
   <div class="plist" id="presetList"></div>
   <div class="row" style="margin-top:14px">

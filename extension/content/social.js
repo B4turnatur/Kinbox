@@ -123,6 +123,12 @@
   // Schwebender Knopf
   // ---------------------------------------------------------------------
   let enabled = true;
+  // Gewählte Akzentfarbe/Stil (Einstellungen → Aussehen) an die Kinbox-Knöpfe weitergeben.
+  const look = (s) => { const d = document.documentElement; d.style.setProperty("--kb-accent", s.accent); d.dataset.kbStyle = s.style; };
+  chrome.storage.sync.get({ style: "classic", accent: "#7c5cff" }, look);
+  chrome.storage.onChanged.addListener((c, area) => {
+    if (area === "sync" && (c.style || c.accent)) chrome.storage.sync.get({ style: "classic", accent: "#7c5cff" }, look);
+  });
   chrome.storage.sync.get({ showYoutubeButton: true, showSocialButtons: true }, (s) => { enabled = s.showSocialButtons; });
   chrome.storage.onChanged.addListener((c, area) => {
     if (area === "sync" && c.showSocialButtons) { enabled = c.showSocialButtons.newValue; if (!enabled) hide(true); }
@@ -134,7 +140,7 @@
   root.innerHTML = `
     <button class="kinbox-f-main" title="Mit Kinbox herunterladen">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1zM5 19h14a1 1 0 1 1 0 2H5a1 1 0 1 1 0-2z"/></svg><span>Kinbox</span>
-    </button><button class="kinbox-f-more" title="Mehr Optionen">▾</button>
+    </button><button class="kinbox-f-more" title="Mehr Optionen">${kbIcon("chevron")}</button>
     <div class="kinbox-f-menu" hidden></div>`;
   translateEl(root);
   let attached = false;
@@ -187,15 +193,16 @@
     const menu = root.querySelector(".kinbox-f-menu");
     const r = await chrome.runtime.sendMessage({ type: "presets" }).catch(() => null);
     menu.innerHTML = "";
-    const add = (label, fn, cls = "") => {
+    const add = (ic, label, fn, cls = "") => {
       const b = document.createElement("button");
-      b.textContent = t(label); b.className = cls;
+      b.innerHTML = kbIcon(ic);
+      b.append(t(label)); b.className = cls;
       b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); closeMenu(); fn(); });
       menu.appendChild(b);
     };
-    add("⬇  Standard-Einstellungen", () => quick(null));
-    for (const p of r?.presets || []) add(`${p.icon || "•"}  ${t(p.name)}`, () => quick(p.id));
-    add("⚙  Mit Optionen …", () => {
+    add("download", "Standard-Einstellungen", () => quick(null));
+    for (const p of r?.presets || []) add(p.icon, p.name, () => quick(p.id));
+    add("sliders", "Mit Optionen …", () => {
       const url = targetUrl();
       if (!url) return flash("Adresse nicht gefunden", true);
       chrome.runtime.sendMessage({ type: "openCustom", url });

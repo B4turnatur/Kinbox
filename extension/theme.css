@@ -1,0 +1,73 @@
+/* Kinbox – gemeinsame Stile für Erweiterung und Mediathek.
+   Liegt identisch in extension/theme.css und server/static/theme.css – beide gleich halten!
+   Stil (data-style auf <html>) und Farbe (--accent) setzt lib/theme.js bzw. die Mediathek.
+   Klassisch = ursprüngliches Aussehen. --round = Obergrenze für kleine Rundungen. */
+:root, [data-style=classic] {
+  --bg: #121216;
+  --bg2: #1b1b21;
+  --bg3: #24242c;
+  --line: #2e2e38;
+  --text: #ececf1;
+  --muted: #9a9aa8;
+  --accent2: color-mix(in oklab, var(--accent) 65%, white);
+  --accent-bg: color-mix(in srgb, var(--accent) 16%, transparent);
+  --grad: linear-gradient(135deg, var(--accent), oklch(from var(--accent) l c calc(h + 28)));
+  --ok: #3ecf8e;
+  --warn: #f5a524;
+  --err: #ff6b6b;
+  --radius: 12px;
+  --round: 99px;   /* Obergrenze für kleine Rundungen (Knöpfe, Chips) */
+  color-scheme: dark;
+}
+:root { --accent: #7c5cff; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+@media (prefers-color-scheme: light) {
+  :root, [data-style=classic] {
+    --bg: #f7f7fa; --bg2: #ffffff; --bg3: #eeeef4; --line: #e0e0e8;
+    --text: #17171c; --muted: #6b6b78; --accent-bg: color-mix(in srgb, var(--accent) 12%, transparent);
+    --accent2: color-mix(in oklab, var(--accent) 85%, black);
+    color-scheme: light;
+  }
+}
+
+/* Schlicht: flach, neutrale Grautöne, keine Verläufe */
+[data-style=clean] {
+  --bg: #111113; --bg2: #18181b; --bg3: #212125; --line: #2c2c31; --text: #ededef; --muted: #8b8b94;
+  --accent2: color-mix(in oklab, var(--accent) 70%, white); --accent-bg: color-mix(in srgb, var(--accent) 14%, transparent);
+  --grad: var(--accent); --radius: 7px; --round: 6px; color-scheme: dark;
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  [data-style=clean] {
+    --bg: #fafafa; --bg2: #ffffff; --bg3: #f1f1f3; --line: #e3e3e7; --text: #18181b; --muted: #71717a;
+    --accent2: color-mix(in oklab, var(--accent) 85%, black); --accent-bg: color-mix(in srgb, var(--accent) 10%, transparent);
+    color-scheme: light;
+  }
+}
+
+/* Papier: warmes Hell, Serifen-Überschriften, Tinte statt Leuchtfarbe */
+[data-style=paper] {
+  --bg: #f2eee5; --bg2: #fbf9f4; --bg3: #e9e3d6; --line: #d6cdbb; --text: #211d16; --muted: #6e6555;
+  --accent2: color-mix(in oklab, var(--accent) 80%, black); --accent-bg: color-mix(in srgb, var(--accent) 12%, transparent);
+  --grad: #211d16; --ok: #2b8a3e; --warn: #c27c0e; --err: #c92a2a; --radius: 3px; --round: 3px; color-scheme: light;
+ 
+}
+
+/* Terminal: Monospace, eckig, dunkel */
+[data-style=mono] {
+  --bg: #0b0c0b; --bg2: #111311; --bg3: #191b19; --line: #2a2e2a; --text: #d7dcd2; --muted: #7b8378;
+  --accent2: color-mix(in oklab, var(--accent) 70%, white); --accent-bg: color-mix(in srgb, var(--accent) 14%, transparent);
+  --grad: var(--accent); --radius: 0px; --round: 0px; color-scheme: dark;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+/* Linien-Icons aus icons.svg */
+.i { width: 1.15em; height: 1.15em; flex: none; vertical-align: -.2em; }
+
+/* Gemeinsame Stil-Details */
+.logo .i { width: 62%; height: 62%; stroke-width: 2.5; }
+[data-style=clean] .logo { border-radius: 6px; }
+[data-style=paper] .brand, [data-style=paper] h1, [data-style=paper] h2 { font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif; }
+[data-style=paper] .logo { background: none; color: var(--text); border: 1.5px solid var(--text); }
+[data-style=paper] input, [data-style=paper] select { background: #fffdf8; }
+[data-style=mono] * { border-radius: 0 !important; }
+[data-style=mono] .logo { background: none; color: var(--accent); border: 1px solid var(--accent); }

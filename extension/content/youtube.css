@@ -5,7 +5,7 @@
   margin-right: 8px;
   height: 36px;
   border-radius: 18px;
-  background: linear-gradient(135deg, #7c5cff, #b24cff);
+  background: linear-gradient(135deg, var(--kb-accent, #7c5cff), oklch(from var(--kb-accent, #7c5cff) l c calc(h + 28)));
   color: #fff;
   font-family: "Roboto", "Arial", sans-serif;
   flex: none;
@@ -52,6 +52,12 @@
   color: #ececf1;
 }
 #kinbox-menu button:hover { background: #2d2d35; }
-#kinbox-menu .kinbox-accent { color: #b8a6ff; border-top: 1px solid #333; border-radius: 0 0 8px 8px; margin-top: 4px; }
+#kinbox-menu .kinbox-accent { color: color-mix(in oklab, var(--kb-accent, #7c5cff) 65%, white); border-top: 1px solid #333; border-radius: 0 0 8px 8px; margin-top: 4px; }
 
 #kinbox-btn.kinbox-floating { position: fixed; right: 24px; bottom: 24px; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); z-index: 2000; }
+
+/* Stile aus Einstellungen → Aussehen (data-kb-style setzt das Content-Skript) */
+html[data-kb-style=clean] #kinbox-btn, html[data-kb-style=mono] #kinbox-btn { background: var(--kb-accent, #7c5cff); }
+html[data-kb-style=paper] #kinbox-btn { background: #211d16; }
+html[data-kb-style=mono] #kinbox-btn, html[data-kb-style=mono] #kinbox-btn button { border-radius: 2px !important; font-family: ui-monospace, Consolas, monospace; }
+.kb-i { width: 16px; height: 16px; flex: none; }

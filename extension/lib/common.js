@@ -42,12 +42,19 @@ export const BUILTIN_PRESETS = [
   { id: "podcast", name: "Podcast (MP3, ohne Sponsoren)", icon: "🎙", options: { mode: "audio", audioFormat: "mp3", audioBitrate: "128", normalize: true, sponsorblock: { mode: "remove", categories: ["sponsor", "selfpromo", "interaction", "intro", "outro"] } } },
 ];
 
+// Linien-Icon aus icons.svg; bekannte Preset-Symbole werden auf Icons abgebildet.
+const ICON_OF = { "★": "star", "▶": "play", "♪": "music", "♫": "music", "💬": "chat", "🖼": "image", "🎙": "mic", "⟲": "reset" };
+export const icon = (name) => `<svg class="i"><use href="icons.svg#${ICON_OF[name] || name}"/></svg>`;
+export const presetIcon = (ch) => ICON_OF[ch] ? icon(ch) : escapeHtml(ch || "•");
+
 export const DEFAULT_SETTINGS = {
   serverUrl: "",
   token: "",
   showYoutubeButton: true,
   showSocialButtons: true,
   notify: true,
+  style: "classic",     // classic | clean | paper | mono
+  accent: "#7c5cff",
   defaults: { ...DEFAULT_OPTIONS },
   presets: [],          // eigene Presets: {id, name, icon, options}
   hiddenBuiltins: [],   // ausgeblendete eingebaute Presets

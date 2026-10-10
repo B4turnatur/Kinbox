@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.5.3"
+APP_VERSION = "3.6.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -928,8 +928,11 @@ def user_root(u: dict) -> Path:
     return p
 
 
+LOOK_STYLES = ("classic", "clean", "paper", "mono")   # Aussehen der Mediathek (theme.css)
+
+
 def user_public(u: dict, private=False) -> dict:
-    d = {k: u.get(k) for k in ("id", "name", "avatar", "color", "role")}
+    d = {k: u.get(k) for k in ("id", "name", "avatar", "color", "role", "look")}
     d["has_pin"] = bool(u.get("pin_hash"))
     if private:
         d.update(folder=u.get("folder"), quota_gb=u.get("quota_gb", 0), cleanup=u.get("cleanup"), created=u.get("created"))
@@ -1473,6 +1476,9 @@ def _apply_profile(u: dict, body: dict, admin_fields: bool):
             u["avatar"] = str(body["avatar"])
         if "color" in body and re.fullmatch(r"#[0-9a-fA-F]{6}", str(body["color"])):
             u["color"] = str(body["color"])
+        look = body.get("look")
+        if isinstance(look, dict) and look.get("style") in LOOK_STYLES and re.fullmatch(r"#[0-9a-fA-F]{6}", str(look.get("accent"))):
+            u["look"] = {"style": look["style"], "accent": look["accent"]}
         if admin_fields:
             if "quota_gb" in body:
                 try:

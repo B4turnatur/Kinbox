@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 const ext = readFileSync(new URL("../extension/lib/i18n.js", import.meta.url), "utf8");
 const srv = readFileSync(new URL("../server/static/i18n.js", import.meta.url), "utf8");
 assert.equal(ext, srv, "extension/lib/i18n.js und server/static/i18n.js müssen identisch sein");
+for (const f of ["theme.css", "icons.svg"])   // Stile + Icons teilen sich Erweiterung und Mediathek
+  assert.equal(readFileSync(new URL(`../extension/${f}`, import.meta.url), "utf8"), readFileSync(new URL(`../server/static/${f}`, import.meta.url), "utf8"), `${f} muss in extension/ und server/static/ gleich sein`);
 
 const load = (lang) => {
   const g = { navigator: { languages: [lang] } };
@@ -24,6 +26,10 @@ const cases = [
   ["Ungültiger Wert für fps", "Invalid value for fps"],
   ["Mein Lieblingsvideo", "Mein Lieblingsvideo"],          // Unbekanntes bleibt unverändert
   ["⭐", "⭐"],
+  [" Schon in der Kinbox (heute): ", " Already in Kinbox (today): "],   // Text neben Icon
+  ["Auf PC (2)", "To PC (2)"],
+  ["Aussehen", "Appearance"],
+  ["Mit Familie teilen", "Share with family"],
 ];
 for (const [de, en] of cases) assert.equal(t(de), en, de);
 

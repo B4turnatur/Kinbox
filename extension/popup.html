@@ -3,20 +3,22 @@
 <head>
 <meta charset="utf-8">
 <title>Kinbox</title>
+<link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="ui.css">
+<script src="lib/theme.js"></script>
 </head>
 <body class="popup">
 <header class="topbar">
   <div class="brand">
-    <span class="logo">⬇</span>
+    <span class="logo"><svg class="i"><use href="icons.svg#logo"/></svg></span>
     <span>Kinbox</span>
     <span class="status" id="status" title="Verbinde …"><span id="whoami" style="display:none;align-items:center;gap:5px;color:var(--text)"></span><i></i></span>
   </div>
   <nav class="tabs">
     <button class="tab active" data-view="download">Download</button>
     <button class="tab" data-view="queue">Warteschlange <b id="queueCount" hidden></b></button>
-    <button class="icon-btn" id="openLibrary" title="Mediathek öffnen" style="margin-left:auto">📚</button>
-    <button class="icon-btn" id="openSettings" title="Einstellungen" style="margin-left:0">⚙</button>
+    <button class="icon-btn" id="openLibrary" title="Mediathek öffnen" style="margin-left:auto"><svg class="i"><use href="icons.svg#library"/></svg></button>
+    <button class="icon-btn" id="openSettings" title="Einstellungen" style="margin-left:0"><svg class="i"><use href="icons.svg#settings"/></svg></button>
   </nav>
 </header>
 
@@ -28,7 +30,7 @@
 
   <div class="url-row">
     <input id="url" type="url" placeholder="Link einfügen oder Seite öffnen …" spellcheck="false">
-    <button id="reload" class="icon-btn" title="Infos laden">↻</button>
+    <button id="reload" class="icon-btn" title="Infos laden"><svg class="i"><use href="icons.svg#refresh"/></svg></button>
   </div>
 
   <section class="media" id="media">
@@ -44,9 +46,9 @@
   <div class="presets" id="presets"></div>
 
   <div class="seg big" data-bind="mode">
-    <button data-value="video">🎬 Video</button>
-    <button data-value="audio">🎵 Audio</button>
-    <button data-value="thumbnail">🖼 Bild</button>
+    <button data-value="video"><svg class="i"><use href="icons.svg#video"/></svg> Video</button>
+    <button data-value="audio"><svg class="i"><use href="icons.svg#music"/></svg> Audio</button>
+    <button data-value="thumbnail"><svg class="i"><use href="icons.svg#image"/></svg> Bild</button>
   </div>
 
   <!-- Video -->
@@ -76,7 +78,7 @@
     <label class="switch"><input type="checkbox" data-bind="prefer60fps"><span></span>60 fps bevorzugen</label>
     <label class="lbl" style="margin-top:8px">Danach umwandeln</label>
     <div class="seg" data-bind="convert.type">
-      <button data-value="none">Nein</button><button data-value="gif">🖼 GIF</button><button data-value="small">📦 Verkleinern</button>
+      <button data-value="none">Nein</button><button data-value="gif"><svg class="i"><use href="icons.svg#image"/></svg> GIF</button><button data-value="small"><svg class="i"><use href="icons.svg#shrink"/></svg> Verkleinern</button>
     </div>
     <div id="gifBox" class="grid2">
       <label class="field">Bilder pro Sekunde
@@ -124,7 +126,7 @@
 
   <!-- Zuschneiden -->
   <details class="card" id="trimCard" data-hide-mode="thumbnail">
-    <summary><span>✂ Zuschneiden</span><em id="trimSummary">ganzes Video</em></summary>
+    <summary><span><svg class="i"><use href="icons.svg#scissors"/></svg> Zuschneiden</span><em id="trimSummary">ganzes Video</em></summary>
     <div class="range" id="range" hidden>
       <div class="range-track"><div class="range-fill" id="rangeFill"></div></div>
       <input type="range" id="rStart" min="0" max="100" step="0.1" value="0">
@@ -132,10 +134,10 @@
     </div>
     <div class="grid2 trim-inputs">
       <label class="field">Start
-        <div class="with-btn"><input id="tStart" placeholder="0:00" spellcheck="false"><button class="mini" data-now="start" title="Aktuelle Position im Video übernehmen">⏱ jetzt</button></div>
+        <div class="with-btn"><input id="tStart" placeholder="0:00" spellcheck="false"><button class="mini" data-now="start" title="Aktuelle Position im Video übernehmen"><svg class="i"><use href="icons.svg#clock"/></svg> jetzt</button></div>
       </label>
       <label class="field">Ende
-        <div class="with-btn"><input id="tEnd" placeholder="Ende" spellcheck="false"><button class="mini" data-now="end" title="Aktuelle Position im Video übernehmen">⏱ jetzt</button></div>
+        <div class="with-btn"><input id="tEnd" placeholder="Ende" spellcheck="false"><button class="mini" data-now="end" title="Aktuelle Position im Video übernehmen"><svg class="i"><use href="icons.svg#clock"/></svg> jetzt</button></div>
       </label>
     </div>
     <label class="switch"><input type="checkbox" id="trimPrecise" checked><span></span>Framegenau schneiden (etwas langsamer)</label>
@@ -145,7 +147,7 @@
 
   <!-- Kapitel -->
   <details class="card" id="chapterCard" hidden data-hide-mode="thumbnail">
-    <summary><span>📑 Kapitel</span><em id="chapterSummary">alle</em></summary>
+    <summary><span><svg class="i"><use href="icons.svg#chapters"/></svg> Kapitel</span><em id="chapterSummary">alle</em></summary>
     <div class="row-actions"><button class="link" id="chAll">Alle</button><button class="link" id="chNone">Keine</button></div>
     <div class="chapters" id="chapters"></div>
     <label class="switch"><input type="checkbox" id="splitChapters"><span></span>Jedes Kapitel als eigene Datei</label>
@@ -153,7 +155,7 @@
 
   <!-- Playlist -->
   <details class="card" id="playlistCard" hidden>
-    <summary><span>📃 Playlist</span><em id="playlistSummary">nur dieses Video</em></summary>
+    <summary><span><svg class="i"><use href="icons.svg#playlist"/></svg> Playlist</span><em id="playlistSummary">nur dieses Video</em></summary>
     <div class="seg" id="playlistMode">
       <button data-value="single">Nur dieses</button><button data-value="all">Ganze Playlist</button><button data-value="items">Auswahl</button>
     </div>
@@ -163,7 +165,7 @@
 
   <!-- Untertitel -->
   <details class="card" data-hide-mode="thumbnail">
-    <summary><span>💬 Untertitel</span><em id="subsSummary">aus</em></summary>
+    <summary><span><svg class="i"><use href="icons.svg#captions"/></svg> Untertitel</span><em id="subsSummary">aus</em></summary>
     <label class="switch"><input type="checkbox" data-bind="subs.enabled"><span></span>Untertitel herunterladen</label>
     <label class="field">Sprachen <small>(Komma-getrennt, z. B. de,en oder en.*)</small>
       <input data-bind="subs.langs" list="subLangs" spellcheck="false">
@@ -176,7 +178,7 @@
 
   <!-- SponsorBlock -->
   <details class="card" data-hide-mode="thumbnail">
-    <summary><span>🚫 SponsorBlock</span><em id="sbSummary">aus</em></summary>
+    <summary><span><svg class="i"><use href="icons.svg#ban"/></svg> SponsorBlock</span><em id="sbSummary">aus</em></summary>
     <div class="seg" data-bind="sponsorblock.mode">
       <button data-value="off">Aus</button><button data-value="mark">Als Kapitel markieren</button><button data-value="remove">Herausschneiden</button>
     </div>
@@ -190,7 +192,7 @@
 
   <!-- Erweitert -->
   <details class="card">
-    <summary><span>⚙ Erweitert</span><em></em></summary>
+    <summary><span><svg class="i"><use href="icons.svg#sliders"/></svg> Erweitert</span><em></em></summary>
     <div data-hide-mode="thumbnail">
       <label class="switch"><input type="checkbox" data-bind="embedThumbnail"><span></span>Vorschaubild einbetten</label>
       <label class="switch"><input type="checkbox" data-bind="embedMetadata"><span></span>Metadaten einbetten (Titel, Kanal …)</label>
@@ -232,8 +234,8 @@
 <footer class="actionbar" id="actionbar">
   <div class="actionbar-top">
     <label class="switch small"><input type="checkbox" data-bind="saveToPc"><span></span>Auf diesen PC</label>
-    <label class="switch small" title="Download startet erst im Nachtfenster (Einstellungen)"><input type="checkbox" id="night"><span></span>🌙 Nachts</label>
-    <button class="link" id="savePreset">★ Preset</button>
+    <label class="switch small" title="Download startet erst im Nachtfenster (Einstellungen)"><input type="checkbox" id="night"><span></span><svg class="i"><use href="icons.svg#moon"/></svg> Nachts</label>
+    <button class="link" id="savePreset"><svg class="i"><use href="icons.svg#star"/></svg> Preset</button>
   </div>
   <button class="primary" id="go"><span>Herunterladen</span><small id="goSummary"></small></button>
 </footer>

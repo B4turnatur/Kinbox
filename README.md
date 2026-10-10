@@ -90,6 +90,7 @@ Runs on your PC, no cloud, no account. Just this PC or your whole home network.
 - **Folder layouts:** flat, by channel, **Plex/Jellyfin** (channel › season year › episode) or music (artist › title)
 - **Download at night** (scheduled window), duplicate warning, 9 built-in presets plus your own
 - **One-click buttons** on YouTube, TikTok, Instagram, X and Reddit, right-click menu, keyboard shortcuts, notifications with "Save to this PC"
+- **Your look**: four styles (Classic, Clean, Paper, Terminal) and eight accent colors with clean line icons – in the extension under *Settings → Appearance*, in the library per profile under *your profile → Appearance*
 - **Web library** (works great on phones, installable as a PWA): search, filter, play, download to the device, 📌 keep
 - **Family profiles:** "Who's watching?" with optional PIN, a folder, library, queue and clean-up rules for each person, sharing with the family, storage quotas, invite links, multiple admins
 - **Automatic clean-up** per person: after downloading to a device, after X days, or above a size limit

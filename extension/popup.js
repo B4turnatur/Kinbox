@@ -1,6 +1,6 @@
 import {
   api, getSettings, saveSettings, allPresets, deepMerge, fileUrl, libraryUrl, isSocial,
-  fmtBytes, fmtTime, parseTime, qualityLabel, youtubeId, playlistId, escapeHtml,
+  fmtBytes, fmtTime, parseTime, qualityLabel, youtubeId, playlistId, escapeHtml, icon, presetIcon,
 } from "./lib/common.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -176,7 +176,7 @@ function summaries() {
   if (opts.mode === "video" && opts.convert?.type === "gif") parts.push("→ GIF");
   if (opts.mode === "video" && opts.convert?.type === "small") parts.push(`→ max. ${opts.convert.targetMB} MB`);
   if (opts.mode === "audio" && opts.musicTags) parts.push("Musik-Tags");
-  if (opts.when === "night") parts.push("🌙 nachts");
+  if (opts.when === "night") parts.push("nachts");
   if (playlistMode !== "single") parts.push("Playlist");
   $("#goSummary").textContent = parts.map(t).join(" · ");
 }
@@ -193,8 +193,8 @@ function lenText(tr) {
 async function renderPresets() {
   const box = $("#presets");
   const presets = await allPresets();
-  box.innerHTML = `<button data-id="default">⟲ Standard</button>` +
-    presets.map((p) => `<button data-id="${escapeHtml(p.id)}">${escapeHtml(p.icon || "•")} ${escapeHtml(p.name)}</button>`).join("");
+  box.innerHTML = `<button data-id="default">${icon("reset")} Standard</button>` +
+    presets.map((p) => `<button data-id="${escapeHtml(p.id)}">${presetIcon(p.icon)} ${escapeHtml(p.name)}</button>`).join("");
   box.onclick = (e) => {
     const b = e.target.closest("button[data-id]");
     if (!b) return;
@@ -318,7 +318,7 @@ function showAlready(list) {
   const e = list[0];
   const days = Math.floor((Date.now() / 1000 - e.added) / 86400);
   const when = days < 1 ? "heute" : days === 1 ? "gestern" : `vor ${days} Tagen`;
-  el.innerHTML = `<span>✓ Schon in der Kinbox (${escapeHtml(when)}): <b>${escapeHtml(e.name)}</b>${list.length > 1 ? ` + ${list.length - 1} weitere` : ""}</span>
+  el.innerHTML = `<span>${icon("check")} Schon in der Kinbox (${escapeHtml(when)}): <b>${escapeHtml(e.name)}</b>${list.length > 1 ? ` + ${list.length - 1} weitere` : ""}</span>
     <button class="link" id="openLib">In Mediathek ansehen</button>`;
   $("#openLib").onclick = async () => chrome.tabs.create({ url: await libraryUrl() });
 }
@@ -630,7 +630,7 @@ async function renderJobs(jobs) {
   if (json === lastJobsJson) return;
   lastJobsJson = json;
   $("#noJobs").hidden = jobs.length > 0;
-  const statusText = { queued: "Wartet", scheduled: "🌙 Geplant für die Nacht", running: "", finished: "Fertig", error: "Fehler", cancelled: "Abgebrochen" };
+  const statusText = { queued: "Wartet", scheduled: "Geplant für die Nacht", running: "", finished: "Fertig", error: "Fehler", cancelled: "Abgebrochen" };
   $("#jobs").innerHTML = jobs.map((j) => {
     const running = j.status === "running";
     const indet = running && (!j.stage.startsWith("Lädt herunter") || !j.percent);
@@ -649,10 +649,10 @@ async function renderJobs(jobs) {
     meta.push(escapeHtml(o.mode === "audio" ? (o.audioFormat || "").toUpperCase() : o.mode === "thumbnail" ? "Bild"
       : o.convert?.type === "gif" ? "GIF" : o.convert?.type === "small" ? `≤ ${o.convert.targetMB} MB` : (o.quality === "best" ? "Beste" : qualityLabel(+o.quality))));
     const acts = [];
-    if (j.status === "scheduled") acts.push(`<button class="link" data-act="start">▶ Jetzt starten</button>`);
+    if (j.status === "scheduled") acts.push(`<button class="link" data-act="start">${icon("play")} Jetzt starten</button>`);
     if (["running", "queued", "scheduled"].includes(j.status)) acts.push(`<button class="link" data-act="cancel">Abbrechen</button>`);
-    if (j.status === "finished" && j.files.some((f) => f.exists)) acts.push(`<button class="link" data-act="save">⬇ Auf PC${j.files.length > 1 ? ` (${j.files.length})` : ""}</button>`);
-    if (j.status === "error" || j.status === "cancelled") acts.push(`<button class="link" data-act="retry">↻ Nochmal</button>`);
+    if (j.status === "finished" && j.files.some((f) => f.exists)) acts.push(`<button class="link" data-act="save">${icon("download")} Auf PC${j.files.length > 1 ? ` (${j.files.length})` : ""}</button>`);
+    if (j.status === "error" || j.status === "cancelled") acts.push(`<button class="link" data-act="retry">${icon("refresh")} Nochmal</button>`);
     if (!["running", "queued", "scheduled"].includes(j.status)) {
       acts.push(`<button class="link" data-act="remove">Entfernen</button>`);
       if (j.files.some((f) => f.exists)) acts.push(`<button class="link" data-act="delfile" style="color:var(--err)">${confirmDelete.has(j.id) ? "Wirklich löschen?" : "Datei löschen"}</button>`);

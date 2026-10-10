@@ -5,6 +5,12 @@
   let presets = [];
   let enabled = true;
 
+  // Gewählte Akzentfarbe/Stil (Einstellungen → Aussehen) an die Kinbox-Knöpfe weitergeben.
+  const look = (s) => { const d = document.documentElement; d.style.setProperty("--kb-accent", s.accent); d.dataset.kbStyle = s.style; };
+  chrome.storage.sync.get({ style: "classic", accent: "#7c5cff" }, look);
+  chrome.storage.onChanged.addListener((c, area) => {
+    if (area === "sync" && (c.style || c.accent)) chrome.storage.sync.get({ style: "classic", accent: "#7c5cff" }, look);
+  });
   chrome.storage.sync.get({ showYoutubeButton: true }, (s) => {
     enabled = s.showYoutubeButton;
     if (enabled) start();
@@ -57,7 +63,7 @@
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1zM5 19h14a1 1 0 1 1 0 2H5a1 1 0 1 1 0-2z"/></svg>
           <span>Kinbox</span>
         </button>
-        <button class="kinbox-more" title="Mehr Optionen">▾</button>`;
+        <button class="kinbox-more" title="Mehr Optionen">${kbIcon("chevron")}</button>`;
       translateEl(wrap);
       if (anchor) {
         anchor.prepend(wrap);
@@ -82,16 +88,17 @@
     }
     const menu = document.createElement("div");
     menu.id = MENU_ID;
-    const add = (label, fn, cls = "") => {
+    const add = (ic, label, fn, cls = "") => {
       const b = document.createElement("button");
       b.className = cls;
-      b.textContent = t(label);
+      b.innerHTML = kbIcon(ic);
+      b.append(t(label));
       b.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); fn(); });
       menu.appendChild(b);
     };
-    add("⬇  Standard-Einstellungen", () => quick(null));
-    for (const p of presets) add(`${p.icon || "•"}  ${t(p.name)}`, () => quick(p.id));
-    add("⚙  Mit Optionen … (zuschneiden, Kapitel …)", () => chrome.runtime.sendMessage({ type: "openCustom", url: currentUrl() }), "kinbox-accent");
+    add("download", "Standard-Einstellungen", () => quick(null));
+    for (const p of presets) add(p.icon, p.name, () => quick(p.id));
+    add("sliders", "Mit Optionen … (zuschneiden, Kapitel …)", () => chrome.runtime.sendMessage({ type: "openCustom", url: currentUrl() }), "kinbox-accent");
     // direkt an <body>: YouTubes Knopfleiste schneidet überstehende Elemente ab
     document.body.appendChild(menu);
     const r = wrap.getBoundingClientRect(), h = menu.offsetHeight;

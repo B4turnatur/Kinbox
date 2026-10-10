@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.5.2"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -2072,9 +2072,10 @@ def main():
     threading.Thread(target=_saver, daemon=True).start()
     host, port = SETTINGS["host"], int(SETTINGS["port"])
     wait_for_old_server(port)
-    if IS_WINDOWS and (Path(os.environ.get("APPDATA", "")) / STARTUP_LNK).exists():
+    # exe startet immer mit Windows; alte PowerShell-Verknüpfung (≤3.5.0, evtl. von Defender entfernt) → Registry
+    if IS_WINDOWS and (FROZEN or (Path(os.environ.get("APPDATA", "")) / STARTUP_LNK).exists()):
         try:
-            set_autostart(True)  # alte PowerShell-Verknüpfung (≤3.5.0) → Registry
+            set_autostart(True)
         except OSError as e:
             print(f"[!] Autostart nicht umgestellt: {e}")
     print("=" * 60)

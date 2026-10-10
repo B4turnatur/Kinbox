@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.5.1"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -1970,7 +1970,7 @@ def app_update_check():
 
 
 def _fetch_update(rel: dict) -> None:
-    """Neue Version neben die alte legen: exe → Kinbox.new.exe, sonst server.py + static/ überschreiben."""
+    """Neue Version einspielen: exe → umbenennen + austauschen, sonst server.py + static/ überschreiben."""
     if FROZEN:
         url = next(a["browser_download_url"] for a in rel["assets"] if a["name"] == "Kinbox.exe")
         tmp = BASE_DIR / "Kinbox.new.exe.part"
@@ -1978,7 +1978,14 @@ def _fetch_update(rel: dict) -> None:
             shutil.copyfileobj(r, fh)
         if tmp.stat().st_size < 1_000_000:
             raise RuntimeError("Download unvollständig")
-        tmp.replace(BASE_DIR / "Kinbox.new.exe")
+        exe, old = Path(sys.executable), BASE_DIR / "Kinbox.old.exe"
+        old.unlink(missing_ok=True)
+        os.replace(exe, old)  # laufende exe darf umbenannt (nur nicht gelöscht) werden
+        try:
+            os.replace(tmp, exe)
+        except OSError:
+            os.replace(old, exe)
+            raise
         return
     import io
     import zipfile
@@ -2003,14 +2010,8 @@ def _fetch_update(rel: dict) -> None:
 def _restart() -> None:
     time.sleep(1)  # Antwort an den Browser noch rausschicken
     env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1", "KB_UPDATED": "1"}
-    if FROZEN:
-        # Helfer wartet, bis die alte exe weg ist (Datei gesperrt), tauscht sie aus und startet sie neu
-        exe = str(Path(sys.executable)).replace("'", "''")
-        new = str(BASE_DIR / "Kinbox.new.exe").replace("'", "''")
-        ps = (f"for($i=0;$i -lt 120;$i++){{try{{Move-Item -Force '{new}' '{exe}' -ErrorAction Stop;break}}"
-              f"catch{{Start-Sleep -Milliseconds 500}}}}; Start-Process '{exe}'")
-        subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], env=env,
-                         creationflags=0x08000000 | 0x00000200)  # CREATE_NO_WINDOW | NEW_PROCESS_GROUP
+    if FROZEN:  # neue exe liegt schon an Ort und Stelle (siehe _fetch_update)
+        subprocess.Popen([sys.executable], cwd=BASE_DIR, env=env, creationflags=0x00000008 | 0x00000200)
     else:
         cmd = [sys.executable, str(Path(__file__).resolve())] + sys.argv[1:]
         if IS_WINDOWS:  # pythonw → wieder unsichtbar, python (start.bat) → neues Konsolenfenster
@@ -2070,13 +2071,12 @@ def main():
         threading.Thread(target=_worker, daemon=True).start()
     threading.Thread(target=_saver, daemon=True).start()
     host, port = SETTINGS["host"], int(SETTINGS["port"])
-    if os.environ.pop("KB_UPDATED", None):  # nach Selbst-Update: warten, bis der alte Prozess den Port freigibt
-        import socket
-        for _ in range(60):
-            with socket.socket() as sock:
-                if sock.connect_ex(("127.0.0.1", port)) != 0:
-                    break
-            time.sleep(0.5)
+    wait_for_old_server(port)
+    if IS_WINDOWS and (Path(os.environ.get("APPDATA", "")) / STARTUP_LNK).exists():
+        try:
+            set_autostart(True)  # alte PowerShell-Verknüpfung (≤3.5.0) → Registry
+        except OSError as e:
+            print(f"[!] Autostart nicht umgestellt: {e}")
     print("=" * 60)
     print(f" Kinbox {APP_VERSION}")
     print(f" Adresse : http://<IP-dieses-PCs>:{port}")
@@ -2097,6 +2097,48 @@ def main():
         app.run(host=host, port=port, threaded=True)
 
 
+STARTUP_LNK = r"Microsoft\Windows\Start Menu\Programs\Startup\Kinbox.lnk"  # bis 3.5.0
+
+
+def _desktop() -> Path:
+    import winreg
+    try:  # echter Desktop-Pfad (z. B. in OneDrive umgeleitet)
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as k:
+            return Path(os.path.expandvars(winreg.QueryValueEx(k, "Desktop")[0]))
+    except OSError:
+        return Path.home() / "Desktop"
+
+
+def set_autostart(on: bool) -> None:
+    """Windows: Autostart bei der Anmeldung über HKCU\\…\\Run (ohne Admin); alte Startup-Verknüpfung weg."""
+    import winreg
+    (Path(os.environ.get("APPDATA", "")) / STARTUP_LNK).unlink(missing_ok=True)
+    cmd = f'"{sys.executable}"' if FROZEN else \
+        f'"{Path(sys.executable).with_name("pythonw.exe")}" "{BASE_DIR / "server.py"}"'
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
+                        winreg.KEY_SET_VALUE) as k:
+        if on:
+            winreg.SetValueEx(k, "Kinbox", 0, winreg.REG_SZ, cmd)
+        else:
+            try:
+                winreg.DeleteValue(k, "Kinbox")
+            except FileNotFoundError:
+                pass
+
+
+def wait_for_old_server(port: int) -> None:
+    """Nach Selbst-Update: warten, bis der alte Prozess den Port freigibt (Windows erlaubt sonst Doppel-Bindung)."""
+    if not os.environ.pop("KB_UPDATED", None):
+        return
+    import socket
+    for _ in range(60):
+        with socket.socket() as sock:
+            if sock.connect_ex(("127.0.0.1", port)) != 0:
+                return
+        time.sleep(0.5)
+
+
 def setup(mode: str) -> None:
     """Vom Installer aufgerufen: „local“ = nur dieser PC (Standalone), „lan“ = Server fürs Heimnetz."""
     local = mode == "local"
@@ -2105,23 +2147,12 @@ def setup(mode: str) -> None:
     users_load()
     token, port = admin_user()["token"], int(SETTINGS["port"])
     if IS_WINDOWS:
-        # Desktop-Link zur Mediathek; bei „local“ zusätzlich Autostart bei der Anmeldung (ohne Admin/Passwort)
-        ps = r"""
-$lnk = [Environment]::GetFolderPath('Startup') + '\Kinbox.lnk'
-Set-Content -Path ([Environment]::GetFolderPath('Desktop') + '\Kinbox.url') -Value "[InternetShortcut]`r`nURL=$env:KB_URL"
-if ($env:KB_LOCAL -eq '1') {
-  $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-  $s.TargetPath = $env:KB_PYW; $s.Arguments = $(if ($env:KB_PY) { '"' + $env:KB_PY + '"' } else { '' }); $s.WorkingDirectory = $env:KB_DIR; $s.Save()
-} else { Remove-Item $lnk -ErrorAction SilentlyContinue }
-"""
-        # Kinbox.exe: Autostart in beiden Modi (Heimnetz mit sichtbarem Fenster), sonst pythonw + server.py
-        pyw = Path(sys.executable) if FROZEN else Path(sys.executable).with_name("pythonw.exe")
-        arg = "" if FROZEN else str(BASE_DIR / "server.py")
-        env = {**os.environ, "KB_LOCAL": "1" if local or FROZEN else "0", "KB_PYW": str(pyw), "KB_DIR": str(BASE_DIR),
-               "KB_PY": arg,
-               "KB_URL": f"http://127.0.0.1:{port}/library" + (f"?token={token}" if local else "")}
-        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], env=env,
-                       creationflags=0x08000000)  # CREATE_NO_WINDOW
+        # Desktop-Link zur Mediathek + Autostart bei der Anmeldung (exe immer, sonst nur „local“) – ohne PowerShell,
+        # das unsichtbare „powershell -ExecutionPolicy Bypass“ hielt Defender für einen Trojaner (Bearfoos)
+        url = f"http://127.0.0.1:{port}/library" + (f"?token={token}" if local else "")
+        (_desktop() / "Kinbox.url").write_text(f"[InternetShortcut]\nURL={url}\n", encoding="utf-8", newline="\r\n")
+        set_autostart(local or FROZEN)
+        pyw = Path(sys.executable).with_name("pythonw.exe")
         if local and pyw.exists() and not FROZEN:
             subprocess.Popen([str(pyw), str(BASE_DIR / "server.py")], cwd=BASE_DIR,
                              creationflags=0x00000008 | 0x00000200)  # DETACHED_PROCESS | NEW_PROCESS_GROUP
@@ -2380,6 +2411,11 @@ def exe_start() -> None:
     import socket
     import webbrowser
     port = int(SETTINGS["port"])
+    wait_for_old_server(port)
+    try:
+        Path(sys.executable).with_name("Kinbox.old.exe").unlink(missing_ok=True)
+    except OSError:
+        pass
     with socket.socket() as sock:
         running = sock.connect_ex(("127.0.0.1", port)) == 0
     if running:

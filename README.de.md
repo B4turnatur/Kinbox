@@ -214,6 +214,7 @@ Wird beim ersten Start angelegt. Nach Änderungen den Server neu starten.
 - **„Server nicht erreichbar"** – Läuft `start.bat`? Stimmt die IP? `install.bat` als Admin ausgeführt (Firewall)? Im Browser `http://IP:8765` öffnen. Das Netzwerk muss in Windows als **privat** eingestuft sein.
 - **„Falscher Token"** – Token aus dem Server-Fenster bzw. `settings.json` kopieren.
 - **YouTube-Downloads scheitern plötzlich** – Einstellungen → „yt-dlp aktualisieren".
+- **Windows Defender meldet `Kinbox.exe` als Trojaner (z. B. `Bearfoos!ml`)** – Fehlalarm der KI-Erkennung: Unsignierte Programme, die andere Programme herunterladen und mit Windows starten, wirken auf sie verdächtig. Versionen vor 3.5.1 lösten das häufiger aus (unsichtbares PowerShell); bitte aktualisieren. Die Datei kannst du bei Microsoft als Fehlalarm melden: [microsoft.com/wdsi/filesubmission](https://www.microsoft.com/wdsi/filesubmission). Der komplette Quellcode steht in `server/server.py`.
 - **„Sign in to confirm you're not a bot" / Instagram „login required"** – Cookies einrichten (siehe oben).
 - **Kein „Kinbox"-Button auf TikTok & Co.** – Seite neu laden. Rechtsklick → „Mit Kinbox herunterladen" und das Popup funktionieren immer.
 - **Video spielt in der Mediathek nicht** – Format (z. B. MKV/H.265) kann der Browser nicht; „Auf dieses Gerät" laden oder MP4 wählen.

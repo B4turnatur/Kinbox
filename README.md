@@ -181,6 +181,7 @@ This file is created on first start. Restart the server after editing it.
 
 - **"Server not reachable":** is `start.bat` running? Is the IP right? Did you run `install.bat` as admin (firewall)? Open `http://IP:8765` in a browser. On Windows the network must be set to **private**.
 - **YouTube downloads suddenly fail:** Settings → "Update yt-dlp".
+- **Windows Defender reports `Kinbox.exe` as a trojan (e.g. `Bearfoos!ml`):** a false positive of the AI heuristic – unsigned tools that download programs and start with Windows look suspicious to it. Versions before 3.5.1 triggered it more often (hidden PowerShell); please update. You can report the file to Microsoft as a false positive: [microsoft.com/wdsi/filesubmission](https://www.microsoft.com/wdsi/filesubmission). The source code is all in `server/server.py`.
 - **"Sign in to confirm you're not a bot" / Instagram "login required":** set up cookies (see above).
 - **No "Kinbox" button on TikTok etc.:** reload the page. The right-click menu and the popup always work.
 - **A video won't play in the library:** the browser can't play that format (e.g. MKV/H.265). Download it to the device instead, or choose MP4.

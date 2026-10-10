@@ -20,3 +20,4 @@ dist/
 *.spec
 server/tools/
 kinbox.log
+launch-video/

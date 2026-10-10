@@ -31,6 +31,9 @@ Save videos and music from YouTube, TikTok & 1,000+ sites to your own PC with on
 
 <img src="docs/images/hero-en.png" alt="Kinbox library on desktop and phone">
 
+<a href="docs/videos/kinbox-launch.mp4"><img src="docs/images/video-poster.jpg" width="640" alt="▶ Watch the 30-second intro"></a><br>
+<sub><a href="docs/videos/kinbox-launch.mp4">▶ Watch the 30-second intro</a></sub>
+
 </div>
 
 <br>

@@ -31,6 +31,9 @@ Videos und Musik von YouTube, TikTok & 1.000+ Seiten mit einem Klick auf den eig
 
 <img src="docs/images/hero-de.png" alt="Kinbox-Mediathek auf PC und Handy">
 
+<a href="docs/videos/kinbox-launch.mp4"><img src="docs/images/video-poster.jpg" width="640" alt="▶ 30-Sekunden-Intro ansehen (Englisch)"></a><br>
+<sub><a href="docs/videos/kinbox-launch.mp4">▶ 30-Sekunden-Intro ansehen (Englisch)</a></sub>
+
 </div>
 
 <br>

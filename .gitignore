@@ -1,0 +1,15 @@
+# Laufzeitdaten – enthalten Tokens, PINs und Cookies. Nie committen!
+server/settings.json
+server/users.json
+server/jobs.json
+server/library.json
+server/*.tmp
+cookies*.txt
+*_cookies.txt
+__pycache__/
+*.pyc
+.playwright-mcp/
+
+# Persönliche Arbeitsnotizen (nur lokal)
+CLAUDE.md
+PROGRESS.md

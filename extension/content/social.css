@@ -1,0 +1,58 @@
+#kinbox-float {
+  position: fixed;
+  z-index: 2147483646;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #7c5cff, #b24cff);
+  color: #fff;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .45);
+  font: 600 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  pointer-events: auto;
+  transition: opacity .15s;
+}
+#kinbox-float[hidden] { display: none; }
+#kinbox-float.err { background: #b3261e; }
+#kinbox-float button {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #fff;
+  font: inherit;
+}
+#kinbox-float .kinbox-f-main { padding: 0 9px 0 11px; border-radius: 16px 0 0 16px; }
+#kinbox-float .kinbox-f-more { padding: 0 10px 0 7px; border-left: 1px solid rgba(255, 255, 255, .3); border-radius: 0 16px 16px 0; font-size: 11px; }
+#kinbox-float button:hover { background: rgba(255, 255, 255, .15); }
+#kinbox-float .busy svg { animation: kinbox-f-bounce .6s ease-in-out infinite; }
+@keyframes kinbox-f-bounce { 50% { transform: translateY(3px); } }
+#kinbox-float .kinbox-f-menu {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  min-width: 260px;
+  background: #1f1f23;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, .5);
+}
+#kinbox-float .kinbox-f-menu[hidden] { display: none; }
+#kinbox-float .kinbox-f-menu button {
+  width: 100%;
+  padding: 0 12px;
+  height: 34px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  color: #ececf1;
+}
+#kinbox-float .kinbox-f-menu button:hover { background: #2d2d35; }
+#kinbox-float .kinbox-f-menu .kinbox-f-accent { color: #b8a6ff; border-top: 1px solid #333; border-radius: 0 0 8px 8px; margin-top: 4px; }

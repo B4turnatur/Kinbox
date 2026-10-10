@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Kinbox – Einstellungen</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  body { max-width: 720px; margin: 0 auto; padding: 28px 20px 60px; font-size: 14px; }
+  h1 { display: flex; align-items: center; gap: 10px; font-size: 22px; margin: 0 0 22px; }
+  h1 .logo { width: 34px; height: 34px; font-size: 18px; border-radius: 10px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .panel { background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .panel p { color: var(--muted); margin: 0 0 12px; }
+  .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .row .field { flex: 1; min-width: 180px; margin: 0; }
+  .btn { background: var(--bg3); border: 1px solid var(--line); border-radius: 9px; padding: 8px 14px; font-weight: 600; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .result { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg3); display: none; white-space: pre-wrap; }
+  .result.ok { display: block; border-left: 4px solid var(--ok); }
+  .result.bad { display: block; border-left: 4px solid var(--err); }
+  .check { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+  .check b { font-weight: 600; }
+  .yes { color: var(--ok); } .no { color: var(--err); }
+  .plist { display: flex; flex-direction: column; gap: 6px; }
+  .pitem { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--bg3); border-radius: 9px; }
+  .pitem .n { flex: 1; }
+  .pitem .d { color: var(--muted); font-size: 12px; }
+  code { background: var(--bg3); padding: 1px 5px; border-radius: 4px; }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1><span class="logo">⬇</span> Kinbox</h1>
+
+<section class="panel">
+  <h2>1. Mit deinem Server verbinden</h2>
+  <p>Die Adresse und den Token zeigt <code>start.bat</code> beim Start auf dem Server an (Token steht auch in <code>settings.json</code>).</p>
+  <div class="row">
+    <label class="field">Server-Adresse <input id="serverUrl" placeholder="http://192.168.178.20:8765" spellcheck="false"></label>
+    <label class="field">Token <input id="token" type="password" placeholder="aus settings.json" spellcheck="false"></label>
+    <button class="btn accent" id="test">Speichern &amp; testen</button>
+  </div>
+  <div class="result" id="testResult"></div>
+  <div class="row" style="margin-top:12px" id="libRow" hidden><button class="btn accent" id="openLibrary">📚 Mediathek öffnen</button></div>
+</section>
+
+<section class="panel" id="serverPanel" hidden>
+  <h2>2. Server <small class="muted" style="font-weight:500">(nur Admin)</small></h2>
+  <p>Profile für die Familie verwaltest du in der <a href="#" id="famLink">Mediathek → ⚙ → Familie</a>.</p>
+  <div class="row">
+    <label class="field">Download-Ordner auf dem Server <input id="downloadDir" spellcheck="false"></label>
+    <label class="field" style="max-width:160px">Gleichzeitige Downloads
+      <select id="maxParallel"><option>1</option><option>2</option><option>3</option><option>4</option><option>6</option><option>8</option></select>
+    </label>
+    <button class="btn" id="saveServer">Übernehmen</button>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn" id="update">yt-dlp aktualisieren</button>
+    <span class="muted">YouTube ändert oft etwas – wenn Downloads plötzlich scheitern, hilft meist ein Update.</span>
+  </div>
+  <div class="result" id="serverResult"></div>
+</section>
+
+<section class="panel" id="cleanupPanel" hidden>
+  <h2>🧹 Automatisch aufräumen</h2>
+  <p>Gilt nur für <b>deine</b> Dateien. Jederzeit umschaltbar und frei kombinierbar. Gelöscht werden nur Dateien, die Kinbox selbst geladen hat – und nie welche, die du in der Mediathek mit 📌 markiert hast.</p>
+  <label class="switch"><input type="checkbox" id="cAfter"><span></span>Löschen, sobald ich die Datei auf PC oder Handy geladen habe</label>
+  <div class="row" style="margin-top:8px">
+    <label class="field">Nach so vielen Tagen löschen <small class="muted">(0 = aus)</small><input type="number" id="cDays" min="0" step="1"></label>
+    <label class="field">Speicherlimit in GB <small class="muted">(0 = aus, älteste zuerst)</small><input type="number" id="cGb" min="0" step="1"></label>
+  </div>
+  <div id="nightBox">
+  <h2 style="margin-top:18px">🌙 Nachts laden</h2>
+  <p>Downloads mit „Nachts" starten erst in diesem Zeitfenster (gilt für die ganze Familie).</p>
+  </div>
+  <div class="row">
+    <label class="field nightField">Von <input type="time" id="nStart"></label>
+    <label class="field nightField">Bis <input type="time" id="nEnd"></label>
+    <button class="btn accent" id="saveCleanup">Speichern</button>
+    <button class="btn" id="runCleanup">Jetzt aufräumen</button>
+  </div>
+  <div class="result" id="cleanupResult"></div>
+  <p style="margin:14px 0 4px" id="libStats"></p>
+  <div class="muted" id="cleanLog" style="font-size:12px"></div>
+</section>
+
+<section class="panel">
+  <h2>3. Verhalten</h2>
+  <label class="switch"><input type="checkbox" id="showYoutubeButton"><span></span>„Kinbox"-Button unter YouTube-Videos anzeigen</label>
+  <label class="switch"><input type="checkbox" id="showSocialButtons"><span></span>„Kinbox"-Button über Videos auf TikTok, Instagram, X und Reddit</label>
+  <label class="switch"><input type="checkbox" id="notify"><span></span>Benachrichtigung, wenn ein Download fertig ist</label>
+  <p style="margin-top:12px">Tastenkürzel: <b>Alt+Shift+D</b> Popup · <b>Alt+Shift+Q</b> sofort laden · <b>Alt+Shift+M</b> als MP3.
+    <a href="#" id="shortcuts">Ändern</a></p>
+</section>
+
+<section class="panel">
+  <h2>4. Presets</h2>
+  <p>Eigene Presets legst du im Popup über „★ Als Preset" an. Dort kannst du sie auch als Standard festlegen.</p>
+  <div class="plist" id="presetList"></div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn" id="resetDefaults">Standard-Einstellungen zurücksetzen</button>
+    <button class="btn" id="export">Exportieren</button>
+    <button class="btn" id="import">Importieren</button>
+    <input type="file" id="importFile" accept="application/json" hidden>
+  </div>
+</section>
+
+<p class="muted" style="text-align:center">Nur im Heimnetz nutzen – den Port nicht im Router freigeben. Für unterwegs lieber VPN (z. B. WireGuard/Tailscale).</p>
+<script src="lib/i18n.js" data-auto></script>
+<script type="module" src="options.js"></script>
+</body>
+</html>

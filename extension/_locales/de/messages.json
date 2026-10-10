@@ -1,0 +1,17 @@
+{
+  "description": {
+    "message": "Videos & Musik mit yt-dlp auf deinem eigenen Server zu Hause herunterladen – YouTube, TikTok, Instagram, X, Reddit und mehr. Mit Zuschneiden, MP3, GIF, Mediathek und Familienprofilen."
+  },
+  "actionTitle": {
+    "message": "Mit Kinbox herunterladen"
+  },
+  "cmdPopup": {
+    "message": "Popup öffnen"
+  },
+  "cmdQuick": {
+    "message": "Aktuelle Seite mit Standard-Einstellungen laden"
+  },
+  "cmdMp3": {
+    "message": "Aktuelle Seite als MP3 laden"
+  }
+}

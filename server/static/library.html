@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#121216">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.png">
+<link rel="apple-touch-icon" href="/static/icon.png">
+<title>Mediathek · Kinbox</title>
+<style>
+:root {
+  --bg: #121216; --bg2: #1b1b21; --bg3: #24242c; --line: #2e2e38; --text: #ececf1; --muted: #9a9aa8;
+  --accent: #7c5cff; --accent2: #a48bff; --accent-bg: rgba(124,92,255,.16); --ok: #3ecf8e; --warn: #f5a524; --err: #ff6b6b;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #f7f7fa; --bg2: #fff; --bg3: #eeeef4; --line: #e0e0e8; --text: #17171c; --muted: #6b6b78; --accent-bg: rgba(124,92,255,.12); color-scheme: light; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: var(--accent2); }
+input, select { background: var(--bg3); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; outline: none; min-width: 0; }
+input:focus, select:focus { border-color: var(--accent); }
+[hidden] { display: none !important; }
+
+header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.bar { max-width: 1280px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; margin-right: auto; }
+.logo { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--accent), #c05cff); }
+.stats { color: var(--muted); font-weight: 500; font-size: 13px; }
+.btn { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 13px; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: linear-gradient(135deg, var(--accent), #b24cff); border: none; color: #fff; }
+.btn.danger { color: var(--err); }
+.tools { max-width: 1280px; margin: 0 auto; padding: 0 16px 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tools input[type=search] { flex: 1 1 200px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { background: var(--bg2); border: 1px solid var(--line); border-radius: 20px; padding: 6px 12px; font-size: 13px; }
+.chip.active { background: var(--accent-bg); border-color: var(--accent); }
+
+main { max-width: 1280px; margin: 0 auto; padding: 16px; }
+.notice { background: var(--bg2); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.notice b { color: var(--text); }
+
+.jobs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.job { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+.job .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.job .s { color: var(--muted); font-size: 12px; }
+.pbar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.pbar i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.card { background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; cursor: pointer; transition: transform .12s, border-color .12s; display: flex; flex-direction: column; }
+.card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.thumb { aspect-ratio: 16/9; background: var(--bg3) center/cover no-repeat; position: relative; display: grid; place-items: center; font-size: 34px; color: var(--muted); }
+.thumb .badge { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,.78); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 5px; }
+.thumb .kind { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 5px; font-weight: 600; }
+.thumb .pin { position: absolute; top: 6px; right: 6px; font-size: 15px; }
+.info { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.info .title { font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.info .meta { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.info .warn { color: var(--warn); font-size: 12px; }
+.empty { text-align: center; color: var(--muted); padding: 70px 20px; }
+
+/* Player */
+dialog { border: none; padding: 0; background: var(--bg2); color: var(--text); border-radius: 16px; width: min(960px, 96vw); max-height: 94vh; overflow: auto; box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+dialog::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(3px); }
+.media { background: #000; display: grid; place-items: center; min-height: 120px; }
+.media video, .media img { max-width: 100%; max-height: 70vh; display: block; }
+.media audio { width: 92%; margin: 30px 0; }
+.media .cover { width: 100%; aspect-ratio: 16/9; background: center/contain no-repeat; }
+.dlg-body { padding: 14px 16px 16px; }
+.dlg-body h2 { font-size: 17px; margin: 0 0 4px; }
+.dlg-body .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; word-break: break-word; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.close { position: sticky; top: 8px; float: right; margin: 8px 8px -44px 0; z-index: 2; background: rgba(0,0,0,.6); color: #fff; border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 18px; }
+
+.form { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.form h2 { margin: 0; font-size: 17px; }
+.form label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 13px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > * { flex: 1 1 140px; }
+.switch { display: flex !important; flex-direction: row !important; align-items: center; gap: 10px; color: var(--text) !important; font-size: 14px !important; cursor: pointer; }
+.switch input { display: none; }
+.switch span { width: 36px; height: 20px; border-radius: 10px; background: var(--line); position: relative; flex: none; transition: background .15s; }
+.switch span::after { content: ""; position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #fff; top: 2px; left: 2px; transition: transform .15s; }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(16px); }
+.hint { color: var(--muted); font-size: 12px; }
+code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 12px; word-break: break-all; }
+.copy { display: flex; gap: 6px; }
+.copy input { flex: 1; font-family: ui-monospace, monospace; font-size: 12px; }
+.log { font-size: 12px; color: var(--muted); max-height: 140px; overflow: auto; }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--bg3); border: 1px solid var(--line); border-left: 4px solid var(--accent); padding: 10px 16px; border-radius: 10px; z-index: 50; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+.toast.err { border-left-color: var(--err); }
+@media (max-width: 560px) {
+  .grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .info { padding: 8px 9px 10px; }
+  .info .title { font-size: 13px; }
+  .brand span.txt { display: none; }
+}
+
+/* ---- v3: Profile & Familie ---- */
+.who { display: inline-flex; align-items: center; gap: 8px; background: var(--bg2); border: 1px solid var(--line); border-radius: 22px; padding: 4px 12px 4px 4px; font-weight: 600; }
+.who:hover { border-color: var(--accent); }
+.av { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 17px; flex: none; background: var(--c, var(--accent)); box-shadow: inset 0 0 0 2px rgba(255,255,255,.15); }
+.av.lg { width: 96px; height: 96px; font-size: 48px; border-radius: 22px; }
+.av.md { width: 44px; height: 44px; font-size: 24px; border-radius: 12px; }
+.usage { max-width: 1280px; margin: 0 auto; padding: 0 16px 10px; display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: 12px; }
+.usage .ub { flex: 0 1 220px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.usage .ub i { display: block; height: 100%; background: var(--accent); }
+.usage .ub i.full { background: var(--err); }
+.scopes { display: flex; gap: 4px; background: var(--bg3); border-radius: 12px; padding: 3px; }
+.scopes button { background: none; border: none; padding: 7px 12px; border-radius: 9px; color: var(--muted); font-weight: 600; font-size: 13px; }
+.scopes button.active { background: var(--bg2); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.scopes b { background: var(--accent); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; margin-left: 3px; }
+.thumb .owner { position: absolute; bottom: 6px; left: 6px; width: 26px; height: 26px; font-size: 14px; }
+.thumb .shr { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 5px; }
+.thumb .pin + .shr { right: 30px; }
+
+/* Profil-Auswahl */
+#picker { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 16px; overflow: auto; }
+#picker h1 { font-size: clamp(24px, 5vw, 38px); margin: 0 0 32px; font-weight: 700; text-align: center; }
+.profiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 26px; max-width: 760px; }
+.profile { background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); font-weight: 600; font-size: 15px; transition: transform .12s; }
+.profile:hover { transform: scale(1.06); color: var(--text); }
+.profile:hover .av { box-shadow: 0 0 0 3px var(--text); }
+.profile .lock { font-size: 12px; opacity: .7; }
+.pinbox { display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.dots { display: flex; gap: 12px; height: 18px; }
+.dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--muted); }
+.dots i.on { background: var(--text); border-color: var(--text); }
+.pad { display: grid; grid-template-columns: repeat(3, 72px); gap: 12px; }
+.pad button { height: 60px; border-radius: 16px; border: 1px solid var(--line); background: var(--bg2); font-size: 22px; font-weight: 600; }
+.pad button:active { background: var(--accent-bg); }
+.shake { animation: shake .35s; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+
+/* Einstellungen */
+.tabs2 { display: flex; gap: 4px; padding: 14px 18px 0; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.tabs2 button { background: none; border: none; border-bottom: 2px solid transparent; padding: 8px 10px; color: var(--muted); font-weight: 600; }
+.tabs2 button.active { color: var(--text); border-color: var(--accent); }
+.emojis { display: flex; flex-wrap: wrap; gap: 6px; }
+.emojis button { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg3); font-size: 20px; }
+.emojis button.active { border-color: var(--accent); background: var(--accent-bg); }
+.colors { display: flex; gap: 8px; flex-wrap: wrap; }
+.colors button { width: 30px; height: 30px; border-radius: 50%; border: 3px solid transparent; }
+.colors button.active { border-color: var(--text); }
+.people { display: flex; flex-direction: column; gap: 10px; }
+.person { background: var(--bg3); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.person .top { display: flex; gap: 10px; align-items: center; }
+.person .top .n { font-weight: 700; }
+.person .top .r { color: var(--muted); font-size: 12px; }
+.person .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.person .acts .btn { padding: 5px 10px; font-size: 12px; }
+.person .edit { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.tag { font-size: 10px; font-weight: 700; background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 5px; vertical-align: 2px; margin-left: 4px; }
+</style>
+</head>
+<body>
+<!-- ============ Profil-Auswahl ============ -->
+<div id="picker" hidden>
+  <div id="pickList">
+    <h1>Wer schaut?</h1>
+    <div class="profiles" id="profiles"></div>
+    <p class="hint" style="text-align:center;margin-top:34px" id="pickHint"></p>
+  </div>
+  <div id="pickPin" class="pinbox" hidden>
+    <div class="av lg" id="pinAv"></div>
+    <div style="font-weight:700;font-size:18px" id="pinName"></div>
+    <div class="hint">PIN eingeben</div>
+    <div class="dots" id="dots"></div>
+    <div class="pad" id="pad"></div>
+    <button class="btn" id="pinBack">← Anderes Profil</button>
+  </div>
+</div>
+
+<header>
+  <div class="bar">
+    <div class="brand"><span class="logo">⬇</span><span class="txt">Mediathek</span><span class="stats" id="stats"></span></div>
+    <button class="btn primary" id="addBtn">＋ Link</button>
+    <button class="who" id="whoBtn" title="Profil & Einstellungen"><span class="av" id="whoAv"></span><span id="whoName"></span></button>
+  </div>
+  <div class="usage" id="usage" hidden><span id="usageText"></span><div class="ub"><i id="usageBar"></i></div></div>
+  <div class="tools">
+    <div class="scopes" id="scopes">
+      <button data-s="mine" class="active">Meine</button>
+      <button data-s="family">👨‍👩‍👧 Familie <b id="famCount" hidden></b></button>
+      <button data-s="all" id="scopeAll" hidden>Alle</button>
+    </div>
+    <select id="ownerFilter" hidden><option value="">Alle Personen</option></select>
+    <input type="search" id="q" placeholder="Suchen …">
+    <div class="chips" id="kinds">
+      <button class="chip active" data-k="">Alle</button><button class="chip" data-k="video">Video</button>
+      <button class="chip" data-k="audio">Audio</button><button class="chip" data-k="gif">GIF</button><button class="chip" data-k="image">Bilder</button>
+    </div>
+    <select id="sort">
+      <option value="new">Neueste</option><option value="old">Älteste</option><option value="big">Größte</option><option value="name">Name</option>
+    </select>
+  </div>
+</header>
+
+<main>
+  <div class="notice" id="cleanupNotice" hidden></div>
+  <div class="jobs" id="jobs"></div>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" hidden></div>
+</main>
+
+<!-- ============ Player ============ -->
+<dialog id="playerDlg">
+  <button class="close" id="closePlayer" aria-label="Schließen">✕</button>
+  <div class="media" id="media"></div>
+  <div class="dlg-body">
+    <h2 id="pTitle"></h2>
+    <div class="meta" id="pMeta"></div>
+    <div class="actions">
+      <a class="btn primary" id="pDownload">⬇ Auf dieses Gerät</a>
+      <button class="btn" id="pShare"></button>
+      <button class="btn" id="pPin"></button>
+      <a class="btn" id="pSource" target="_blank" rel="noopener">↗ Original</a>
+      <button class="btn danger" id="pDelete">Löschen</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ============ Link hinzufügen ============ -->
+<dialog id="addDlg">
+  <form class="form" id="addForm">
+    <h2>Link herunterladen</h2>
+    <label>Link <input id="addUrl" inputmode="url" placeholder="https://…" required></label>
+    <label>Was?
+      <select id="addPreset">
+        <option value="best">🎬 Video – beste Qualität</option>
+        <option value="1080">🎬 Video – 1080p (überall abspielbar)</option>
+        <option value="720">🎬 Video – 720p klein</option>
+        <option value="mp3">🎵 MP3 320 kbps</option>
+        <option value="music">🎵 Musik mit Tags & Cover</option>
+        <option value="flac">🎵 FLAC verlustfrei</option>
+        <option value="podcast">🎙 Podcast (ohne Sponsoren)</option>
+        <option value="whatsapp">💬 WhatsApp-tauglich (≤ 15 MB)</option>
+        <option value="gif">🖼 GIF</option>
+      </select>
+    </label>
+    <label class="switch"><input type="checkbox" id="addNight"><span></span>Erst nachts laden</label>
+    <div class="row"><button type="button" class="btn" id="addCancel">Abbrechen</button><button class="btn primary">Herunterladen</button></div>
+    <details><summary class="hint" style="cursor:pointer">📱 Direkt aus der Teilen-Funktion am Handy</summary>
+      <div class="hint" style="margin-top:8px">Diese Adresse ruft der Kurzbefehl auf – <b>[LINK]</b> wird durch den geteilten Link ersetzt. Sie enthält <b>deinen</b> persönlichen Schlüssel, Downloads landen also in deinem Bereich.</div>
+      <div class="copy" style="margin-top:6px"><input id="shortcutUrl" readonly><button type="button" class="btn" id="copyShortcut">Kopieren</button></div>
+      <div class="hint" style="margin-top:8px"><b>Android:</b> App „HTTP Shortcuts" → ＋ → Create from scratch → Methode GET, obige Adresse, [LINK] durch eine globale „Static Variable" mit „Allow Receiving Value from Share Dialog" ersetzen.<br>
+      <b>iPhone:</b> App „Kurzbefehle" → neuer Kurzbefehl → „Im Share-Sheet anzeigen" (URLs) → Aktion „URL" mit obiger Adresse, [LINK] durch „Kurzbefehleingabe" ersetzen → „Inhalte von URL abrufen".</div>
+    </details>
+  </form>
+</dialog>
+
+<!-- ============ Einstellungen ============ -->
+<dialog id="setDlg">
+  <div class="tabs2" id="setTabs">
+    <button data-t="profile" class="active">👤 Mein Profil</button>
+    <button data-t="cleanup">🧹 Aufräumen</button>
+    <button data-t="family" id="famTab" hidden>👨‍👩‍👧 Familie</button>
+    <button data-t="server" id="srvTab" hidden>⚙ Server</button>
+  </div>
+
+  <form class="form" data-p="profile" id="profForm">
+    <div class="row" style="align-items:center;flex-wrap:nowrap"><div class="av lg" id="profAv" style="flex:none"></div>
+      <label style="flex:1">Name <input id="profName" maxlength="30"></label></div>
+    <div><div class="hint" style="margin-bottom:6px">Bild</div><div class="emojis" id="profEmojis"></div></div>
+    <div><div class="hint" style="margin-bottom:6px">Farbe</div><div class="colors" id="profColors"></div></div>
+    <label>PIN (4–8 Ziffern, leer = ohne PIN) <input id="profPin" inputmode="numeric" type="password" autocomplete="new-password" placeholder="unverändert"></label>
+    <label class="switch" id="profPinOffBox" hidden><input type="checkbox" id="profPinOff"><span></span>PIN entfernen</label>
+    <div class="hint" id="profInfo"></div>
+    <details><summary class="hint" style="cursor:pointer">🔌 Browser-Erweiterung einrichten</summary>
+      <div class="hint" style="margin:8px 0">In den Einstellungen der Erweiterung diese beiden Werte eintragen:</div>
+      <div class="copy"><input id="extUrl" readonly><button type="button" class="btn" data-copy="extUrl">Kopieren</button></div>
+      <div class="copy" style="margin-top:6px"><input id="extToken" readonly type="password"><button type="button" class="btn" data-copy="extToken">Kopieren</button></div>
+    </details>
+    <div class="row"><button type="button" class="btn" id="switchProfile">⇄ Profil wechseln</button><button type="button" class="btn" data-close>Schließen</button><button class="btn primary">Speichern</button></div>
+  </form>
+
+  <form class="form" data-p="cleanup" id="cleanForm" hidden>
+    <div class="hint">Gilt nur für <b>deine</b> Dateien. Jederzeit umschaltbar und kombinierbar. Mit 📌 markierte Dateien werden nie automatisch gelöscht.</div>
+    <label class="switch"><input type="checkbox" id="cAfter"><span></span>Löschen, nachdem ich die Datei auf PC/Handy geladen habe</label>
+    <div class="row">
+      <label>Nach Tagen löschen (0 = aus) <input type="number" id="cDays" min="0" step="1"></label>
+      <label>Speicherlimit in GB (0 = aus) <input type="number" id="cGb" min="0" step="1"></label>
+    </div>
+    <div class="row"><button type="button" class="btn" id="runCleanup">Jetzt aufräumen</button><button type="button" class="btn" data-close>Schließen</button><button class="btn primary">Speichern</button></div>
+    <div><div class="hint" style="margin-bottom:4px">Zuletzt aufgeräumt</div><div class="log" id="cleanLog">–</div></div>
+  </form>
+
+  <div class="form" data-p="family" hidden>
+    <div class="hint">Jede Person hat einen eigenen Bereich, eine eigene Warteschlange und eigene Aufräum-Regeln. Über „Einladen" bekommt jemand einen Link, der ihn direkt anmeldet.</div>
+    <div class="people" id="people"></div>
+    <h2 style="margin-top:6px">Person hinzufügen</h2>
+    <form id="newForm" class="form" style="padding:0">
+      <div class="row">
+        <label>Name <input id="newName" maxlength="30" required></label>
+        <label>PIN (optional) <input id="newPin" inputmode="numeric" type="password" autocomplete="new-password"></label>
+        <label>Speicher-Kontingent in GB (0 = unbegrenzt) <input id="newQuota" type="number" min="0" step="1" value="0"></label>
+      </div>
+      <div class="emojis" id="newEmojis"></div>
+      <label class="switch"><input type="checkbox" id="newAdmin"><span></span>Auch Admin (darf Familie & Server verwalten)</label>
+      <div class="row"><button type="button" class="btn" data-close>Schließen</button><button class="btn primary">＋ Hinzufügen</button></div>
+    </form>
+  </div>
+
+  <form class="form" data-p="server" id="srvForm" hidden>
+    <h2>🌙 Nachts laden</h2>
+    <div class="row">
+      <label>Von <input type="time" id="nStart"></label>
+      <label>Bis <input type="time" id="nEnd"></label>
+    </div>
+    <div class="hint" id="srvInfo"></div>
+    <div class="row"><button type="button" class="btn" id="runCleanupAll">Bei allen aufräumen</button><button type="button" class="btn" data-close>Schließen</button><button class="btn primary">Speichern</button></div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/static/i18n.js" data-auto></script>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtBytes = (n) => { if (!n) return ""; const u = ["B","KB","MB","GB","TB"]; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return `${n.toFixed(n < 10 && i > 1 ? 1 : 0)} ${u[i]}`; };
+const fmtDur = (s) => { if (!s) return ""; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
+const ago = (t) => { const d = (Date.now() / 1000 - t); if (d < 60) return "gerade eben"; if (d < 3600) return `vor ${Math.floor(d / 60)} Min.`; if (d < 86400) return `vor ${Math.floor(d / 3600)} Std.`; if (d < 86400 * 30) return `vor ${Math.floor(d / 86400)} Tagen`; return new Date(t * 1000).toLocaleDateString(); };
+const KIND = { video: "Video", audio: "Audio", gif: "GIF", image: "Bild", other: "Datei" };
+const AVATARS = ["😀","😎","🦊","🐼","🐯","🦄","🐸","🐙","🦁","🐶","🐱","🐻","🚀","⚽","🎮","🎧","🌸","👑","🧸","🍕","🌈","🐬","🦖","🎨"];
+const COLORS = ["#7c5cff","#ff6b6b","#3ecf8e","#f5a524","#2fb7ff","#ff5cc8","#9aa0a6","#00c2a8"];
+const avatar = (u, cls = "") => `<span class="av ${cls}" style="--c:${esc(u.color || "#7c5cff")}">${esc(u.avatar || "🙂")}</span>`;
+
+// ---- Anmeldung ----------------------------------------------------------
+const qs = new URLSearchParams(location.search);
+const store = { get: (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } }, set: (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch {} } };
+if (qs.get("token")) { store.set("kinbox_token", qs.get("token")); history.replaceState(null, "", location.pathname); }
+let token = store.get("kinbox_token");
+let me = null, isAdmin = false;
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { "X-Token": token, Accept: "application/json", ...(opts.body ? { "Content-Type": "application/json" } : {}), ...(opts.headers || {}) } });
+  let data = null; try { data = await res.json(); } catch {}
+  if (res.status === 401) { token = ""; store.set("kinbox_token", ""); showPicker(); throw new Error("Bitte Profil wählen"); }
+  if (!res.ok) throw new Error(data?.error || "HTTP " + res.status);
+  return data;
+}
+const fileUrl = (id, what) => `/api/library/${id}/${what}?token=${encodeURIComponent(token)}`;
+
+let pickUser = null, pin = "";
+async function showPicker() {
+  clearTimeout(pollT);
+  $("#picker").hidden = false; $("#pickList").hidden = false; $("#pickPin").hidden = true;
+  $$("dialog[open]").forEach((d) => d.close());
+  try {
+    const list = await (await fetch("/api/profiles")).json();
+    $("#profiles").innerHTML = list.map((u) => `<button class="profile" data-id="${esc(u.id)}">${avatar(u, "lg")}<span>${esc(u.name)}</span>${u.has_pin ? `<span class="lock">🔒</span>` : ""}</button>`).join("");
+    $("#profiles").onclick = (e) => { const b = e.target.closest(".profile"); if (b) choose(list.find((u) => u.id === b.dataset.id)); };
+    $("#pickHint").textContent = list.length === 1 ? "Weitere Personen legt der Admin unter ⚙ → Familie an." : "";
+  } catch { $("#profiles").innerHTML = `<div class="hint">Server nicht erreichbar.</div>`; }
+}
+async function choose(u) {
+  pickUser = u; pin = "";
+  if (!u.has_pin) return login("");
+  $("#pickList").hidden = true; $("#pickPin").hidden = false;
+  $("#pinAv").outerHTML = `<div class="av lg" id="pinAv" style="--c:${esc(u.color)}">${esc(u.avatar)}</div>`;
+  $("#pinName").textContent = u.name;
+  drawDots();
+}
+function drawDots() { $("#dots").innerHTML = Array.from({ length: Math.max(4, pin.length) }, (_, i) => `<i class="${i < pin.length ? "on" : ""}"></i>`).join(""); }
+$("#pad").innerHTML = [1,2,3,4,5,6,7,8,9,"⌫",0,"✓"].map((k) => `<button data-k="${k}">${k}</button>`).join("");
+$("#pad").addEventListener("click", (e) => {
+  const k = e.target.closest("button")?.dataset.k; if (k == null) return;
+  if (k === "⌫") pin = pin.slice(0, -1);
+  else if (k === "✓") { if (pin.length >= 4) login(pin); return; }
+  else if (pin.length < 8) pin += k;
+  drawDots();
+});
+document.addEventListener("keydown", (e) => {
+  if ($("#pickPin").hidden || $("#picker").hidden) return;
+  if (/^\d$/.test(e.key) && pin.length < 8) { pin += e.key; drawDots(); }
+  else if (e.key === "Backspace") { pin = pin.slice(0, -1); drawDots(); }
+  else if (e.key === "Enter" && pin.length >= 4) login(pin);
+});
+$("#pinBack").addEventListener("click", showPicker);
+async function login(p) {
+  const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pickUser.id, pin: p }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) { pin = ""; drawDots(); $("#dots").classList.remove("shake"); void $("#dots").offsetWidth; $("#dots").classList.add("shake"); return toast(d.error || "Fehler", true); }
+  token = d.token; store.set("kinbox_token", token);
+  $("#picker").hidden = true;
+  scope = "mine"; load(); pollJobs();
+}
+
+// ---- Bibliothek ---------------------------------------------------------
+let items = [], kind = "", data = null, scope = "mine";
+async function load() {
+  if (!token) return showPicker();
+  try { data = await api(`/api/library?scope=${scope}&owner=${encodeURIComponent($("#ownerFilter").value)}`); } catch (e) { return; }
+  me = data.user; isAdmin = data.is_admin;
+  items = data.items;
+  $("#whoAv").outerHTML = `<span class="av" id="whoAv" style="--c:${esc(me.color)}">${esc(me.avatar)}</span>`;
+  $("#whoName").textContent = me.name;
+  $("#scopeAll").hidden = !isAdmin;
+  $("#famCount").hidden = !data.family_count; $("#famCount").textContent = data.family_count;
+  $$("#scopes button").forEach((b) => b.classList.toggle("active", b.dataset.s === scope));
+  $("#ownerFilter").hidden = scope !== "all";
+  $("#stats").textContent = `${data.stats.count} Dateien · ${fmtBytes(data.stats.size) || "0 B"}`;
+  const q = +data.quota_gb;
+  $("#usage").hidden = !q;
+  if (q) {
+    const pct = Math.min(100, data.usage / (q * 1024 ** 3) * 100);
+    $("#usageText").textContent = `${fmtBytes(data.usage) || "0 B"} von ${q} GB genutzt`;
+    $("#usageBar").style.width = pct + "%";
+    $("#usageBar").classList.toggle("full", pct >= 95);
+  }
+  renderCleanupNotice();
+  render();
+}
+
+function renderCleanupNotice() {
+  const c = data.cleanup || {}, parts = [];
+  if (c.after_pc_download) parts.push(t("nach dem Laden aufs Gerät"));
+  if (+c.max_age_days) parts.push(t(`nach ${c.max_age_days} Tagen`));
+  if (+c.max_size_gb) parts.push(t(`ab ${c.max_size_gb} GB (älteste zuerst)`));
+  const n = $("#cleanupNotice");
+  n.hidden = scope !== "mine";
+  n.innerHTML = parts.length ? `🧹 <span>Deine Dateien werden automatisch gelöscht: <b>${esc(parts.join(" · "))}</b></span> <a href="#" data-open-settings="cleanup">ändern</a>`
+    : `🧹 <span>Automatisches Aufräumen ist <b>aus</b> – deine Dateien bleiben, bis du sie löschst.</span> <a href="#" data-open-settings="cleanup">einschalten</a>`;
+}
+document.addEventListener("click", (e) => { const a = e.target.closest("[data-open-settings]"); if (a) { e.preventDefault(); openSettings(a.dataset.openSettings); } });
+
+function render() {
+  const q = $("#q").value.trim().toLowerCase();
+  let list = items.filter((e) => (!kind || e.kind === kind) && (!q || `${e.title} ${e.name} ${e.uploader} ${e.folder} ${e.owner_name}`.toLowerCase().includes(q)));
+  const s = $("#sort").value;
+  list.sort((a, b) => s === "old" ? a.added - b.added : s === "big" ? b.size - a.size : s === "name" ? a.title.localeCompare(b.title) : b.added - a.added);
+  $("#empty").hidden = list.length > 0;
+  $("#empty").innerHTML = items.length ? "Nichts gefunden."
+    : scope === "family" ? "Noch nichts geteilt.<br>Öffne eine deiner Dateien und tippe auf „👨‍👩‍👧 Mit Familie teilen“."
+    : "Noch nichts heruntergeladen.<br>Tippe auf „＋ Link“ oder nutze die Browser-Erweiterung.";
+  $("#grid").innerHTML = list.map((e) => {
+    const bg = e.kind === "image" || e.kind === "gif" ? fileUrl(e.id, "stream") : e.thumbnail;
+    const icon = !bg ? (e.kind === "audio" ? "♪" : e.kind === "video" ? "▶" : "📄") : "";
+    const mine = e.owner === me.id;
+    const warn = e.delete_at ? `<div class="warn">Wird gleich gelöscht</div>` : "";
+    return `<div class="card" data-id="${e.id}">
+      <div class="thumb" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${icon}
+        <span class="kind">${KIND[e.kind] || "Datei"}</span>${e.pinned ? `<span class="pin" title="Wird nie automatisch gelöscht">📌</span>` : ""}
+        ${e.shared && mine ? `<span class="shr" title="Mit der Familie geteilt">👨‍👩‍👧</span>` : ""}
+        ${!mine ? `<span class="av owner" title="${esc(e.owner_name)}">${esc(e.owner_avatar)}</span>` : ""}
+        ${e.duration ? `<span class="badge">${fmtDur(e.duration)}</span>` : ""}</div>
+      <div class="info"><div class="title">${esc(e.title)}</div>
+        <div class="meta">${esc([!mine ? e.owner_name : e.uploader, fmtBytes(e.size), ago(e.added)].filter(Boolean).join(" · "))}</div>${warn}</div></div>`;
+  }).join("");
+}
+$("#q").addEventListener("input", render);
+$("#sort").addEventListener("change", render);
+$("#kinds").addEventListener("click", (e) => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  kind = b.dataset.k;
+  $$("#kinds .chip").forEach((c) => c.classList.toggle("active", c === b));
+  render();
+});
+$("#scopes").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-s]"); if (!b) return;
+  scope = b.dataset.s;
+  if (scope === "all" && $("#ownerFilter").options.length < 2) {
+    try { const us = await api("/api/users"); $("#ownerFilter").innerHTML = `<option value="">Alle Personen</option>` + us.map((u) => `<option value="${esc(u.id)}">${esc(u.avatar + " " + u.name)}</option>`).join(""); } catch {}
+  }
+  load();
+});
+$("#ownerFilter").addEventListener("change", load);
+
+// ---- Player -------------------------------------------------------------
+let current = null;
+$("#grid").addEventListener("click", (e) => { const c = e.target.closest(".card"); if (c) openPlayer(items.find((x) => x.id === c.dataset.id)); });
+function openPlayer(e) {
+  current = e;
+  const src = fileUrl(e.id, "stream"), m = $("#media");
+  if (e.kind === "video") m.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline poster="${esc(e.thumbnail || "")}"></video>`;
+  else if (e.kind === "audio") m.innerHTML = `${e.thumbnail ? `<div class="cover" style="background-image:url('${esc(e.thumbnail)}')"></div>` : ""}<audio src="${esc(src)}" controls autoplay></audio>`;
+  else if (e.kind === "image" || e.kind === "gif") m.innerHTML = `<img src="${esc(src)}" alt="">`;
+  else m.innerHTML = `<div style="padding:40px;color:#aaa">Keine Vorschau</div>`;
+  const v = m.querySelector("video");
+  if (v) v.addEventListener("error", () => m.insertAdjacentHTML("beforeend", `<div style="color:#fff;padding:10px">Dieses Format kann der Browser nicht abspielen – lade die Datei herunter.</div>`), { once: true });
+  const mine = e.owner === me.id, canEdit = mine || isAdmin;
+  $("#pTitle").textContent = e.title;
+  $("#pMeta").textContent = [!mine ? `${e.owner_avatar} ${e.owner_name}` : "", e.uploader, fmtBytes(e.size), fmtDur(e.duration), ago(e.added), e.folder ? "📁 " + e.folder : "", e.name].filter(Boolean).join(" · ");
+  $("#pDownload").href = fileUrl(e.id, "download");
+  $("#pSource").href = e.url || "#";
+  $("#pSource").hidden = !e.url || !/^https?:/.test(e.url);
+  $("#pShare").hidden = !mine;
+  $("#pShare").textContent = e.shared ? "👨‍👩‍👧 Geteilt ✓" : "👨‍👩‍👧 Mit Familie teilen";
+  $("#pPin").hidden = !canEdit;
+  $("#pPin").textContent = e.pinned ? "📌 Behalten (an)" : "📌 Behalten";
+  $("#pDelete").hidden = !canEdit;
+  $("#pDelete").textContent = "Löschen"; delete $("#pDelete").dataset.sure;
+  $("#playerDlg").showModal();
+}
+function closePlayer() { $("#media").innerHTML = ""; $("#playerDlg").close(); }
+$("#closePlayer").addEventListener("click", closePlayer);
+$("#playerDlg").addEventListener("close", () => { $("#media").innerHTML = ""; });
+$("#playerDlg").addEventListener("click", (e) => { if (e.target === $("#playerDlg")) closePlayer(); });
+$("#pShare").addEventListener("click", async () => {
+  try { const r = await api(`/api/library/${current.id}/share`, { method: "POST", body: JSON.stringify({ shared: !current.shared }) });
+    current.shared = r.shared; $("#pShare").textContent = r.shared ? "👨‍👩‍👧 Geteilt ✓" : "👨‍👩‍👧 Mit Familie teilen";
+    toast(r.shared ? "Die ganze Familie sieht das jetzt" : "Nur noch für dich sichtbar"); load();
+  } catch (e) { toast(e.message, true); }
+});
+$("#pPin").addEventListener("click", async () => {
+  try { const r = await api(`/api/library/${current.id}/pin`, { method: "POST", body: JSON.stringify({ pinned: !current.pinned }) });
+    current.pinned = r.pinned; $("#pPin").textContent = r.pinned ? "📌 Behalten (an)" : "📌 Behalten";
+    toast(r.pinned ? "Wird nie automatisch gelöscht" : "Normal – darf aufgeräumt werden"); load();
+  } catch (e) { toast(e.message, true); }
+});
+$("#pDelete").addEventListener("click", async () => {
+  if (!$("#pDelete").dataset.sure) { $("#pDelete").dataset.sure = 1; $("#pDelete").textContent = "Wirklich löschen?"; return; }
+  try { await api(`/api/library/${current.id}`, { method: "DELETE" }); closePlayer(); toast("Gelöscht"); load(); } catch (e) { toast(e.message, true); }
+});
+$("#pDownload").addEventListener("click", () => setTimeout(load, 70000));
+
+// ---- Link hinzufügen ----------------------------------------------------
+const shortcut = () => `${location.origin}/api/add?token=${token}&preset=${$("#addPreset").value}&url=[LINK]`;
+$("#addBtn").addEventListener("click", async () => {
+  $("#shortcutUrl").value = shortcut();
+  $("#addDlg").showModal(); $("#addUrl").focus();
+  try { const t = await navigator.clipboard.readText(); if (/^https?:\/\//.test(t.trim()) && !$("#addUrl").value) $("#addUrl").value = t.trim(); } catch {}
+});
+$("#addCancel").addEventListener("click", () => $("#addDlg").close());
+$("#addPreset").addEventListener("change", () => { $("#shortcutUrl").value = shortcut(); });
+$("#copyShortcut").addEventListener("click", () => copy($("#shortcutUrl")));
+$("#addForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const p = new URLSearchParams({ url: $("#addUrl").value.trim(), preset: $("#addPreset").value });
+  if ($("#addNight").checked) p.set("when", "night");
+  try { await api("/api/add?" + p); $("#addDlg").close(); $("#addUrl").value = ""; toast($("#addNight").checked ? "Wird nachts geladen" : "Wird heruntergeladen …"); pollJobs(); }
+  catch (err) { toast(err.message, true); }
+});
+async function copy(input) {
+  const was = input.type; input.type = "text"; input.select();
+  try { await navigator.clipboard.writeText(input.value); } catch { document.execCommand("copy"); }
+  input.type = was; toast("Kopiert");
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-copy]"); if (b) copy($("#" + b.dataset.copy)); });
+
+// ---- Einstellungen ------------------------------------------------------
+let prof = {};
+function showTab(t) {
+  $$("#setTabs button").forEach((b) => b.classList.toggle("active", b.dataset.t === t));
+  $$("#setDlg [data-p]").forEach((p) => p.hidden = p.dataset.p !== t);
+  if (t === "family") loadPeople();
+}
+$("#setTabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-t]"); if (b) showTab(b.dataset.t); });
+$$("#setDlg [data-close]").forEach((b) => b.addEventListener("click", () => $("#setDlg").close()));
+$("#whoBtn").addEventListener("click", () => openSettings("profile"));
+
+function emojiPicker(el, selected, onPick) {
+  el.innerHTML = AVATARS.map((a) => `<button type="button" class="${a === selected ? "active" : ""}">${a}</button>`).join("");
+  el.onclick = (e) => { const b = e.target.closest("button"); if (!b) return; $$("button", el).forEach((x) => x.classList.toggle("active", x === b)); onPick(b.textContent); };
+}
+
+async function openSettings(tab = "profile") {
+  try {
+    const p = await api("/api/ping");
+    const m = await api("/api/me");
+    me = p.user; isAdmin = p.is_admin;
+    prof = { name: me.name, avatar: me.avatar, color: me.color };
+    $("#profName").value = me.name;
+    const drawAv = () => { $("#profAv").style.setProperty("--c", prof.color); $("#profAv").textContent = prof.avatar; };
+    drawAv();
+    emojiPicker($("#profEmojis"), me.avatar, (a) => { prof.avatar = a; drawAv(); });
+    $("#profColors").innerHTML = COLORS.map((c) => `<button type="button" style="background:${c}" data-c="${c}" class="${c === me.color ? "active" : ""}"></button>`).join("");
+    $("#profColors").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; prof.color = b.dataset.c; $$("#profColors button").forEach((x) => x.classList.toggle("active", x === b)); drawAv(); };
+    $("#profPin").value = ""; $("#profPinOff").checked = false;
+    $("#profPinOffBox").hidden = !me.has_pin;
+    $("#profPin").placeholder = me.has_pin ? "unverändert" : "keine PIN";
+    $("#profInfo").innerHTML = `${isAdmin ? "Admin · " : ""}${fmtBytes(p.usage) || "0 B"} genutzt${p.quota_gb ? ` von ${p.quota_gb} GB` : ""} · Ordner: <code>${esc(me.folder || "(Hauptordner)")}</code>`;
+    $("#extUrl").value = location.origin; $("#extToken").value = m.token;
+    $("#cAfter").checked = !!p.cleanup.after_pc_download;
+    $("#cDays").value = p.cleanup.max_age_days || 0;
+    $("#cGb").value = p.cleanup.max_size_gb || 0;
+    renderLog(p.cleanup_log);
+    $("#famTab").hidden = $("#srvTab").hidden = !isAdmin;
+    if (isAdmin) {
+      $("#nStart").value = p.night.start.padStart(5, "0");
+      $("#nEnd").value = p.night.end.padStart(5, "0");
+      $("#srvInfo").innerHTML = `yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>`;
+    }
+    if (!isAdmin && (tab === "family" || tab === "server")) tab = "profile";
+    showTab(tab);
+    if (!$("#setDlg").open) $("#setDlg").showModal();
+  } catch (e) { toast(e.message, true); }
+}
+function renderLog(log) { $("#cleanLog").innerHTML = log?.length ? log.map((l) => `${ago(l.time)} · ${esc(l.name)} (${fmtBytes(l.size)}) – ${esc(l.reason)}`).join("<br>") : "–"; }
+
+$("#profForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = { name: $("#profName").value.trim(), avatar: prof.avatar, color: prof.color };
+  if ($("#profPinOff").checked) body.pin = "";
+  else if ($("#profPin").value.trim()) body.pin = $("#profPin").value.trim();
+  try { await api("/api/me", { method: "POST", body: JSON.stringify(body) }); toast("Gespeichert"); $("#setDlg").close(); load(); }
+  catch (err) { toast(err.message, true); }
+});
+$("#switchProfile").addEventListener("click", () => { token = ""; store.set("kinbox_token", ""); showPicker(); });
+$("#cleanForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try { await api("/api/settings", { method: "POST", body: JSON.stringify({ cleanup: { after_pc_download: $("#cAfter").checked, max_age_days: +$("#cDays").value || 0, max_size_gb: +$("#cGb").value || 0 } }) });
+    toast("Gespeichert"); $("#setDlg").close(); setTimeout(load, 3000); load();
+  } catch (err) { toast(err.message, true); }
+});
+$("#runCleanup").addEventListener("click", async () => {
+  try { const r = await api("/api/cleanup/run", { method: "POST" }); renderLog(r.cleanup_log); toast(r.removed ? `${r.removed} Dateien gelöscht` : "Nichts zu löschen"); load(); } catch (e) { toast(e.message, true); }
+});
+$("#runCleanupAll").addEventListener("click", async () => {
+  try { const r = await api("/api/cleanup/run?all=1", { method: "POST" }); toast(r.removed ? `${r.removed} Dateien gelöscht` : "Nichts zu löschen – alle halten ihre Regeln ein"); load(); } catch (e) { toast(e.message, true); }
+});
+$("#srvForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try { await api("/api/settings", { method: "POST", body: JSON.stringify({ night: { start: $("#nStart").value || "01:00", end: $("#nEnd").value || "07:00" } }) }); toast("Gespeichert"); $("#setDlg").close(); }
+  catch (err) { toast(err.message, true); }
+});
+
+// ---- Familie verwalten (Admin) -------------------------------------------
+let people = [], openEdit = null, confirmDel = null;
+async function loadPeople() {
+  try { people = await api("/api/users"); } catch (e) { return toast(e.message, true); }
+  $("#people").innerHTML = people.map((u) => {
+    const q = +u.quota_gb, pct = q ? Math.min(100, u.usage / (q * 1024 ** 3) * 100) : 0;
+    const self = u.id === me.id;
+    return `<div class="person" data-id="${esc(u.id)}">
+      <div class="top">${avatar(u, "md")}<div style="flex:1;min-width:0"><div class="n">${esc(u.name)}${u.role === "admin" ? `<span class="tag">ADMIN</span>` : ""}${self ? ` <span class="hint">(du)</span>` : ""}</div>
+        <div class="r">${[t(`${u.files} Dateien`), (fmtBytes(u.usage) || "0 B") + (q ? ` ${t("von")} ${q} GB` : ""), u.has_pin ? "🔒 PIN" : "", u.active_jobs ? t(`${u.active_jobs} Downloads aktiv`) : ""].filter(Boolean).join(" · ")}</div>
+        ${q ? `<div class="usage" style="padding:4px 0 0"><div class="ub" style="flex:1"><i style="width:${pct}%" class="${pct >= 95 ? "full" : ""}"></i></div></div>` : ""}</div></div>
+      <div class="acts">
+        <button class="btn" data-a="invite">✉ Einladen</button>
+        <button class="btn" data-a="edit">✎ Bearbeiten</button>
+        <button class="btn" data-a="token" title="Alter Link & Erweiterung hören auf zu funktionieren">↻ Neuer Schlüssel</button>
+        ${!self ? `<button class="btn danger" data-a="del">${confirmDel === u.id ? "Wirklich? Dateien behalten" : "Löschen"}</button>` : ""}
+        ${!self && confirmDel === u.id ? `<button class="btn danger" data-a="delfiles">…und Dateien löschen</button>` : ""}
+      </div>
+      ${openEdit === u.id ? `<form class="edit" data-edit>
+        <div class="row"><label>Name <input name="name" value="${esc(u.name)}" maxlength="30"></label>
+          <label>Kontingent GB (0 = unbegrenzt) <input name="quota_gb" type="number" min="0" step="1" value="${esc(u.quota_gb || 0)}"></label>
+          <label>Neue PIN (leer = unverändert) <input name="pin" inputmode="numeric" type="password" autocomplete="new-password"></label></div>
+        ${u.has_pin ? `<label class="switch"><input type="checkbox" name="nopin"><span></span>PIN entfernen</label>` : ""}
+        ${!self ? `<label class="switch"><input type="checkbox" name="admin" ${u.role === "admin" ? "checked" : ""}><span></span>Admin</label>` : ""}
+        <div class="row"><button type="button" class="btn" data-a="cancel">Abbrechen</button><button class="btn primary">Speichern</button></div>
+      </form>` : ""}
+    </div>`;
+  }).join("");
+}
+$("#people").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-a]"); if (!b) return;
+  const id = b.closest(".person").dataset.id, u = people.find((x) => x.id === id), a = b.dataset.a;
+  try {
+    if (a === "invite") {
+      const link = `${location.origin}/library?token=${encodeURIComponent(u.token)}`;
+      const text = LANG === "de"
+        ? `Hallo ${u.name}! Dein Zugang zu Kinbox:\n\n📚 Mediathek (einfach öffnen): ${link}\n\n🔌 Für die Browser-Erweiterung:\nAdresse: ${location.origin}\nToken: ${u.token}\n\nNur im WLAN zu Hause nutzbar.`
+        : `Hi ${u.name}! Your Kinbox access:\n\n📚 Library (just open it): ${link}\n\n🔌 For the browser extension:\nAddress: ${location.origin}\nToken: ${u.token}\n\nOnly works on the home Wi-Fi.`;
+      if (navigator.share) { try { await navigator.share({ title: "Kinbox", text }); return; } catch {} }
+      try { await navigator.clipboard.writeText(text); toast("Einladung kopiert – per WhatsApp o. ä. schicken"); } catch { prompt(t("Einladung kopieren:"), text); }
+    }
+    if (a === "edit") { openEdit = openEdit === id ? null : id; return loadPeople(); }
+    if (a === "cancel") { openEdit = null; return loadPeople(); }
+    if (a === "token") { await api(`/api/users/${id}/token`, { method: "POST" }); toast("Neuer Schlüssel – bitte neu einladen"); if (id === me.id) { location.reload(); return; } }
+    if (a === "del") {
+      if (confirmDel !== id) { confirmDel = id; setTimeout(() => { confirmDel = null; loadPeople(); }, 5000); return loadPeople(); }
+      await api(`/api/users/${id}`, { method: "DELETE" }); toast(`${u.name} entfernt – Dateien gehören jetzt dir`); confirmDel = null;
+    }
+    if (a === "delfiles") { const r = await api(`/api/users/${id}?files=1`, { method: "DELETE" }); toast(`${u.name} entfernt, ${r.removed_files} Dateien gelöscht`); confirmDel = null; }
+    loadPeople(); load();
+  } catch (err) { toast(err.message, true); }
+});
+$("#people").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target, id = f.closest(".person").dataset.id;
+  const el = f.elements;
+  const body = { name: el["name"].value.trim(), quota_gb: +el["quota_gb"].value || 0 };
+  if (el["nopin"]?.checked) body.pin = ""; else if (el["pin"].value.trim()) body.pin = el["pin"].value.trim();
+  if (el["admin"]) body.role = el["admin"].checked ? "admin" : "member";
+  try { await api(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }); toast("Gespeichert"); openEdit = null; loadPeople(); load(); }
+  catch (err) { toast(err.message, true); }
+});
+let newAvatar = AVATARS[0];
+emojiPicker($("#newEmojis"), newAvatar, (a) => newAvatar = a);
+$("#newForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = { name: $("#newName").value.trim(), avatar: newAvatar, quota_gb: +$("#newQuota").value || 0, role: $("#newAdmin").checked ? "admin" : "member" };
+  if ($("#newPin").value.trim()) body.pin = $("#newPin").value.trim();
+  try { const u = await api("/api/users", { method: "POST", body: JSON.stringify(body) });
+    toast(`${u.name} angelegt – jetzt auf „✉ Einladen“ tippen`); $("#newName").value = ""; $("#newPin").value = ""; $("#newAdmin").checked = false; loadPeople();
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---- Laufende Downloads -------------------------------------------------
+let pollT, lastActive = 0;
+async function pollJobs() {
+  clearTimeout(pollT);
+  if (!token) return;
+  try {
+    const jobs = await api("/api/jobs");
+    const active = jobs.filter((j) => ["running", "queued", "scheduled"].includes(j.status));
+    $("#jobs").innerHTML = active.map((j) => `<div class="job"><div class="t">${esc(j.title)}</div>
+      <div class="s">${esc(j.status === "scheduled" ? "🌙 Nachts" : j.status === "queued" ? "Wartet" : j.stage)}${j.percent && j.status === "running" ? " · " + Math.round(j.percent) + " %" : ""}</div>
+      <div class="pbar"><i style="width:${j.percent || 0}%"></i></div></div>`).join("");
+    const running = active.filter((j) => j.status !== "scheduled").length;
+    if (running < lastActive) load();
+    lastActive = running;
+    pollT = setTimeout(pollJobs, running ? 1500 : 8000);
+  } catch { pollT = setTimeout(pollJobs, 10000); }
+}
+
+let toastT;
+function toast(t, err = false) { const el = $("#toast"); el.textContent = t; el.className = "toast" + (err ? " err" : ""); el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 3000); }
+
+if (token) { load(); pollJobs(); } else showPicker();
+</script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Kinbox</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">⬇</span>
+    <span>Kinbox</span>
+    <span class="status" id="status" title="Verbinde …"><span id="whoami" style="display:none;align-items:center;gap:5px;color:var(--text)"></span><i></i></span>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-view="download">Download</button>
+    <button class="tab" data-view="queue">Warteschlange <b id="queueCount" hidden></b></button>
+    <button class="icon-btn" id="openLibrary" title="Mediathek öffnen" style="margin-left:auto">📚</button>
+    <button class="icon-btn" id="openSettings" title="Einstellungen" style="margin-left:0">⚙</button>
+  </nav>
+</header>
+
+<!-- ============================ DOWNLOAD ============================ -->
+<main id="view-download" class="view">
+  <div id="setupHint" class="notice warn" hidden>
+    Noch kein Server eingerichtet. <a href="#" id="setupLink">Einstellungen öffnen</a>
+  </div>
+
+  <div class="url-row">
+    <input id="url" type="url" placeholder="Link einfügen oder Seite öffnen …" spellcheck="false">
+    <button id="reload" class="icon-btn" title="Infos laden">↻</button>
+  </div>
+
+  <section class="media" id="media">
+    <div class="thumb" id="thumb"><span class="dur" id="duration"></span></div>
+    <div class="meta">
+      <div class="title" id="title">—</div>
+      <div class="sub" id="uploader"></div>
+      <div class="sub err" id="infoError" hidden></div>
+    </div>
+  </section>
+  <div class="notice ok" id="already" hidden></div>
+
+  <div class="presets" id="presets"></div>
+
+  <div class="seg big" data-bind="mode">
+    <button data-value="video">🎬 Video</button>
+    <button data-value="audio">🎵 Audio</button>
+    <button data-value="thumbnail">🖼 Bild</button>
+  </div>
+
+  <!-- Video -->
+  <section data-show-mode="video" class="block">
+    <label class="lbl">Qualität</label>
+    <div class="qualities" id="qualities" data-bind="quality"></div>
+    <div class="grid2">
+      <label class="field">Format
+        <select data-bind="container">
+          <option value="mp4">MP4 (empfohlen)</option>
+          <option value="mkv">MKV</option>
+          <option value="webm">WebM</option>
+          <option value="mov">MOV</option>
+          <option value="auto">Original</option>
+        </select>
+      </label>
+      <label class="field">Codec
+        <select data-bind="vcodec">
+          <option value="any">Automatisch</option>
+          <option value="h264">H.264 (kompatibel)</option>
+          <option value="h265">H.265 / HEVC</option>
+          <option value="vp9">VP9</option>
+          <option value="av1">AV1 (klein)</option>
+        </select>
+      </label>
+    </div>
+    <label class="switch"><input type="checkbox" data-bind="prefer60fps"><span></span>60 fps bevorzugen</label>
+    <label class="lbl" style="margin-top:8px">Danach umwandeln</label>
+    <div class="seg" data-bind="convert.type">
+      <button data-value="none">Nein</button><button data-value="gif">🖼 GIF</button><button data-value="small">📦 Verkleinern</button>
+    </div>
+    <div id="gifBox" class="grid2">
+      <label class="field">Bilder pro Sekunde
+        <select data-bind="convert.gifFps" data-type="number"><option value="8">8 (klein)</option><option value="12">12</option><option value="15">15</option><option value="20">20</option><option value="25">25 (flüssig)</option></select>
+      </label>
+      <label class="field">Breite
+        <select data-bind="convert.gifWidth" data-type="number"><option value="320">320 px</option><option value="480">480 px</option><option value="640">640 px</option><option value="800">800 px</option></select>
+      </label>
+      <div class="sub" style="grid-column:1/-1;margin:-4px 0 6px">Tipp: vorher zuschneiden – GIFs gehen bis 90 Sekunden.</div>
+    </div>
+    <div id="smallBox">
+      <div class="seg chips" data-bind="convert.targetMB">
+        <button data-value="8">8 MB · Discord</button><button data-value="15">15 MB · WhatsApp</button><button data-value="25">25 MB · E-Mail</button>
+        <button data-value="50">50 MB</button><button data-value="100">100 MB</button>
+      </div>
+    </div>
+    <label class="switch" id="keepOrigBox"><input type="checkbox" data-bind="convert.keepOriginal"><span></span>Original zusätzlich behalten</label>
+  </section>
+
+  <!-- Audio -->
+  <section data-show-mode="audio" class="block">
+    <label class="lbl">Format</label>
+    <div class="seg chips" data-bind="audioFormat">
+      <button data-value="mp3">MP3</button><button data-value="m4a">M4A</button><button data-value="opus">Opus</button>
+      <button data-value="flac">FLAC</button><button data-value="wav">WAV</button><button data-value="best">Original</button>
+    </div>
+    <div id="bitrateBox">
+      <label class="lbl">Bitrate</label>
+      <div class="seg chips" data-bind="audioBitrate">
+        <button data-value="320">320</button><button data-value="256">256</button><button data-value="192">192</button>
+        <button data-value="128">128</button><button data-value="96">96</button><button data-value="best">VBR beste</button>
+      </div>
+    </div>
+    <label class="switch"><input type="checkbox" data-bind="musicTags"><span></span>Musik-Modus: Interpret &amp; Titel sauber, quadratisches Cover</label>
+    <label class="switch"><input type="checkbox" data-bind="normalize"><span></span>Lautstärke angleichen (loudnorm)</label>
+  </section>
+
+  <!-- Bild -->
+  <section data-show-mode="thumbnail" class="block">
+    <label class="lbl">Vorschaubild speichern als</label>
+    <div class="seg chips" data-bind="thumbnailFormat">
+      <button data-value="jpg">JPG</button><button data-value="png">PNG</button><button data-value="webp">WebP</button>
+    </div>
+  </section>
+
+  <!-- Zuschneiden -->
+  <details class="card" id="trimCard" data-hide-mode="thumbnail">
+    <summary><span>✂ Zuschneiden</span><em id="trimSummary">ganzes Video</em></summary>
+    <div class="range" id="range" hidden>
+      <div class="range-track"><div class="range-fill" id="rangeFill"></div></div>
+      <input type="range" id="rStart" min="0" max="100" step="0.1" value="0">
+      <input type="range" id="rEnd" min="0" max="100" step="0.1" value="100">
+    </div>
+    <div class="grid2 trim-inputs">
+      <label class="field">Start
+        <div class="with-btn"><input id="tStart" placeholder="0:00" spellcheck="false"><button class="mini" data-now="start" title="Aktuelle Position im Video übernehmen">⏱ jetzt</button></div>
+      </label>
+      <label class="field">Ende
+        <div class="with-btn"><input id="tEnd" placeholder="Ende" spellcheck="false"><button class="mini" data-now="end" title="Aktuelle Position im Video übernehmen">⏱ jetzt</button></div>
+      </label>
+    </div>
+    <label class="switch"><input type="checkbox" id="trimPrecise" checked><span></span>Framegenau schneiden (etwas langsamer)</label>
+    <label class="switch"><input type="checkbox" id="trimPreview" checked><span></span>Beim Ziehen im Video mitspringen</label>
+    <button class="link" id="trimReset">Zurücksetzen</button>
+  </details>
+
+  <!-- Kapitel -->
+  <details class="card" id="chapterCard" hidden data-hide-mode="thumbnail">
+    <summary><span>📑 Kapitel</span><em id="chapterSummary">alle</em></summary>
+    <div class="row-actions"><button class="link" id="chAll">Alle</button><button class="link" id="chNone">Keine</button></div>
+    <div class="chapters" id="chapters"></div>
+    <label class="switch"><input type="checkbox" id="splitChapters"><span></span>Jedes Kapitel als eigene Datei</label>
+  </details>
+
+  <!-- Playlist -->
+  <details class="card" id="playlistCard" hidden>
+    <summary><span>📃 Playlist</span><em id="playlistSummary">nur dieses Video</em></summary>
+    <div class="seg" id="playlistMode">
+      <button data-value="single">Nur dieses</button><button data-value="all">Ganze Playlist</button><button data-value="items">Auswahl</button>
+    </div>
+    <input id="playlistItems" placeholder="z. B. 1-5,8,10-" hidden spellcheck="false">
+    <div class="sub" id="playlistInfo"></div>
+  </details>
+
+  <!-- Untertitel -->
+  <details class="card" data-hide-mode="thumbnail">
+    <summary><span>💬 Untertitel</span><em id="subsSummary">aus</em></summary>
+    <label class="switch"><input type="checkbox" data-bind="subs.enabled"><span></span>Untertitel herunterladen</label>
+    <label class="field">Sprachen <small>(Komma-getrennt, z. B. de,en oder en.*)</small>
+      <input data-bind="subs.langs" list="subLangs" spellcheck="false">
+    </label>
+    <datalist id="subLangs"></datalist>
+    <div class="sub" id="subsAvail"></div>
+    <label class="switch"><input type="checkbox" data-bind="subs.auto"><span></span>Automatische Untertitel verwenden</label>
+    <label class="switch" data-show-mode="video"><input type="checkbox" data-bind="subs.embed"><span></span>In Video einbetten (sonst als Datei)</label>
+  </details>
+
+  <!-- SponsorBlock -->
+  <details class="card" data-hide-mode="thumbnail">
+    <summary><span>🚫 SponsorBlock</span><em id="sbSummary">aus</em></summary>
+    <div class="seg" data-bind="sponsorblock.mode">
+      <button data-value="off">Aus</button><button data-value="mark">Als Kapitel markieren</button><button data-value="remove">Herausschneiden</button>
+    </div>
+    <div class="chips multi" data-bind-multi="sponsorblock.categories">
+      <button data-value="sponsor">Sponsor</button><button data-value="selfpromo">Eigenwerbung</button>
+      <button data-value="interaction">Abo-Aufrufe</button><button data-value="intro">Intro</button>
+      <button data-value="outro">Abspann</button><button data-value="preview">Vorschau</button>
+      <button data-value="filler">Füller</button><button data-value="music_offtopic">Musik: Nicht-Musik</button>
+    </div>
+  </details>
+
+  <!-- Erweitert -->
+  <details class="card">
+    <summary><span>⚙ Erweitert</span><em></em></summary>
+    <div data-hide-mode="thumbnail">
+      <label class="switch"><input type="checkbox" data-bind="embedThumbnail"><span></span>Vorschaubild einbetten</label>
+      <label class="switch"><input type="checkbox" data-bind="embedMetadata"><span></span>Metadaten einbetten (Titel, Kanal …)</label>
+      <label class="switch"><input type="checkbox" data-bind="embedChapters"><span></span>Kapitelmarken einbetten</label>
+      <label class="switch"><input type="checkbox" data-bind="writeThumbnail"><span></span>Vorschaubild zusätzlich als Datei</label>
+      <label class="switch"><input type="checkbox" data-bind="writeDescription"><span></span>Beschreibung als .txt</label>
+      <label class="switch"><input type="checkbox" data-bind="writeInfoJson"><span></span>Info-JSON speichern</label>
+    </div>
+    <label class="field">Ordnerstruktur
+      <select data-bind="organize">
+        <option value="flat">Alles in einen Ordner</option>
+        <option value="channel">Nach Kanal / Account</option>
+        <option value="plex">Plex / Jellyfin (Kanal › Jahr › Folge)</option>
+        <option value="music">Musik (Interpret › Titel)</option>
+      </select>
+    </label>
+    <label class="field">Unterordner auf dem Server
+      <input data-bind="subfolder" placeholder="z. B. Musik/Playlists" spellcheck="false">
+    </label>
+    <label class="field">Dateiname-Vorlage <small><a href="https://github.com/yt-dlp/yt-dlp#output-template" target="_blank">Hilfe</a></small>
+      <input data-bind="filenameTemplate" placeholder="%(title)s [%(id)s].%(ext)s" spellcheck="false">
+    </label>
+    <div class="grid2">
+      <label class="field">Tempolimit
+        <input data-bind="rateLimit" placeholder="z. B. 5M" spellcheck="false">
+      </label>
+      <label class="field">Parallele Teile
+        <select data-bind="concurrentFragments" data-type="number">
+          <option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="16">16</option>
+        </select>
+      </label>
+    </div>
+    <label class="switch"><input type="checkbox" data-bind="useCookies"><span></span>Cookies des Servers nutzen (Alters-/Mitgliedervideos)</label>
+    <label class="switch"><input type="checkbox" data-bind="skipArchive"><span></span>Schon geladene Videos überspringen (Archiv)</label>
+  </details>
+
+  <div class="spacer"></div>
+</main>
+
+<footer class="actionbar" id="actionbar">
+  <div class="actionbar-top">
+    <label class="switch small"><input type="checkbox" data-bind="saveToPc"><span></span>Auf diesen PC</label>
+    <label class="switch small" title="Download startet erst im Nachtfenster (Einstellungen)"><input type="checkbox" id="night"><span></span>🌙 Nachts</label>
+    <button class="link" id="savePreset">★ Preset</button>
+  </div>
+  <button class="primary" id="go"><span>Herunterladen</span><small id="goSummary"></small></button>
+</footer>
+
+<!-- ============================ WARTESCHLANGE ============================ -->
+<main id="view-queue" class="view" hidden>
+  <div class="queue-head">
+    <span class="sub" id="serverInfo"></span>
+    <button class="link" id="clearDone">Erledigte entfernen</button>
+  </div>
+  <div id="jobs" class="jobs"></div>
+  <div id="noJobs" class="empty" hidden>Noch keine Downloads.<br>Öffne ein Video und klick auf „Herunterladen".</div>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script src="lib/i18n.js" data-auto></script>
+<script type="module" src="popup.js"></script>
+</body>
+</html>

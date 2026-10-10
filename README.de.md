@@ -22,9 +22,8 @@ Die Oberfläche ist zweisprachig: Deutsch bei deutschem Browser, sonst Englisch.
 
 1. Im [neuesten Release](https://github.com/B4turnatur/Kinbox/releases/latest) **`Kinbox.exe`** und **`Kinbox-Extension.zip`** herunterladen.
 2. `Kinbox.exe` in einen eigenen Ordner legen, z. B. `C:\Kinbox`, und doppelklicken. Windows warnt eventuell „Der Computer wurde durch Windows geschützt“. Dann auf **Weitere Informationen → Trotzdem ausführen** klicken. Die exe ist nicht signiert.
-3. Beim ersten Start lädt sie yt-dlp, ffmpeg und deno herunter (ca. 150 MB) und legt sie in `tools\` ab. Danach fragt sie:
-   **1 = Nur auf diesem PC (Standalone)** oder **2 = Server fürs Heimnetz**. Bei 2 die Nachfrage der Windows-Firewall mit „Zugriff zulassen“ bestätigen.
-4. Sie zeigt den **Token** für die Erweiterung an. Kinbox startet ab jetzt bei der Anmeldung automatisch. Ein erneuter Doppelklick auf `Kinbox.exe` öffnet die Mediathek.
+3. Ein Einrichtungsfenster öffnet sich. **Nur auf diesem PC** oder **Server fürs Heimnetz** wählen und auf **Einrichten** klicken. Kinbox lädt yt-dlp, ffmpeg und deno herunter (ca. 150 MB) und legt sie in `tools\` ab. Beim Heimnetz die Nachfrage der Windows-Firewall mit „Zugriff zulassen“ bestätigen.
+4. Das Fenster zeigt **Adresse** und **Token** für die Erweiterung an (mit Kopieren-Knopf). Kinbox startet ab jetzt bei der Anmeldung automatisch. Ein erneuter Doppelklick auf `Kinbox.exe` öffnet die Mediathek.
 
 yt-dlp aktualisierst du in den Einstellungen der Erweiterung mit „yt-dlp aktualisieren“.
 

@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.3.1"
+APP_VERSION = "3.4.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -2004,7 +2004,8 @@ if ($env:KB_LOCAL -eq '1') {
         env = {**os.environ, "KB_LOCAL": "1" if local or FROZEN else "0", "KB_PYW": str(pyw), "KB_DIR": str(BASE_DIR),
                "KB_PY": arg,
                "KB_URL": f"http://127.0.0.1:{port}/library" + (f"?token={token}" if local else "")}
-        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], env=env)
+        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], env=env,
+                       creationflags=0x08000000)  # CREATE_NO_WINDOW
         if local and pyw.exists() and not FROZEN:
             subprocess.Popen([str(pyw), str(BASE_DIR / "server.py")], cwd=BASE_DIR,
                              creationflags=0x00000008 | 0x00000200)  # DETACHED_PROCESS | NEW_PROCESS_GROUP
@@ -2024,7 +2025,7 @@ TOOL_DOWNLOADS = {  # offizielle Quellen, jeweils neueste Version
 }
 
 
-def ensure_tools() -> None:
+def ensure_tools(progress=None) -> None:
     """Kinbox.exe: fehlende Programme beim ersten Start nach tools/ laden."""
     import ssl
     import urllib.request
@@ -2042,7 +2043,12 @@ def ensure_tools() -> None:
         print(f" Lade {name} herunter ...", flush=True)
         tmp = TOOLS_DIR / (name + ".part")
         with urllib.request.urlopen(url, context=ctx, timeout=60) as r, open(tmp, "wb") as f:
-            shutil.copyfileobj(r, f)
+            total, done = int(r.headers.get("Content-Length") or 0), 0
+            while chunk := r.read(1 << 16):
+                f.write(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(name, done, total)
         if url.endswith(".zip"):
             with zipfile.ZipFile(tmp) as z:
                 for m in z.namelist():
@@ -2054,10 +2060,203 @@ def ensure_tools() -> None:
             tmp.replace(TOOLS_DIR / name)
 
 
-def exe_start() -> None:
-    """Doppelklick auf Kinbox.exe (ohne Fenster gebaut): läuft schon → Mediathek öffnen; erster Start → Konsole,
-    Programme laden, Modus wählen; Standalone läuft danach unsichtbar (Ausgaben in kinbox.log)."""
+def lan_ip() -> str:
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 80))  # schickt nichts, wählt nur die Netzwerkkarte
+            return s.getsockname()[0]
+    except OSError:
+        return "<IP-dieses-PCs>"
+
+
+def setup_gui() -> None:
+    """Kinbox.exe, erster Start: Einrichtungsfenster – Modus wählen, Programme laden, Adresse + Token anzeigen."""
     import ctypes
+    import tkinter as tk
+    import webbrowser
+    from tkinter import ttk
+    de = ctypes.windll.kernel32.GetUserDefaultUILanguage() & 0x3FF == 0x07
+    L = lambda d, e: d if de else e  # noqa: E731
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # scharf statt verwaschen bei 125 %/150 %
+    except Exception:
+        pass
+    BG, BG2, BG3, LINE, TEXT, MUTED, ACC, ACC2 = ("#121216", "#1b1b21", "#24242c", "#2e2e38", "#ececf1", "#9a9aa8",
+                                                  "#7c5cff", "#8f73ff")
+    root = tk.Tk()
+    root.title(L("Kinbox einrichten", "Kinbox setup"))
+    root.configure(bg=BG)
+    root.resizable(False, False)
+    logo = tk.PhotoImage(file=str(STATIC_DIR / "icon.png"))
+    small = logo.subsample(2)
+    root.iconphoto(True, logo)
+    root.update()
+    try:  # dunkle Titelleiste (Windows 10 20H1+/11)
+        hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(ctypes.c_int(1)), 4)
+    except Exception:
+        pass
+    font = lambda size, bold=False: ("Segoe UI Semibold" if bold else "Segoe UI", size)  # noqa: E731
+    style = ttk.Style()
+    style.theme_use("clam")
+    style.configure("K.Horizontal.TProgressbar", troughcolor=BG3, background=ACC, bordercolor=BG3,
+                    lightcolor=ACC, darkcolor=ACC, thickness=10)
+    body = tk.Frame(root, bg=BG, padx=40, pady=30)
+    body.pack(fill="both", expand=True)
+    st = {"mode": "local", "file": "", "done_b": 0, "total_b": 0, "error": None, "ready": False}
+
+    def clear():
+        for w in body.winfo_children():
+            w.destroy()
+
+    def button(parent, text, cmd, primary=True):
+        bg, hover = (ACC, ACC2) if primary else (BG3, LINE)
+        b = tk.Label(parent, text=text, font=font(11, True), bg=bg, fg="white" if primary else TEXT,
+                     padx=22, pady=9, cursor="hand2")
+        b.bind("<Enter>", lambda e: b.config(bg=hover))
+        b.bind("<Leave>", lambda e: b.config(bg=bg))
+        b.bind("<Button-1>", lambda e: cmd())
+        return b
+
+    def header(title, sub):
+        tk.Label(body, image=small, bg=BG).pack()
+        tk.Label(body, text=title, font=font(18, True), bg=BG, fg=TEXT).pack(pady=(10, 2))
+        tk.Label(body, text=sub, font=font(10), bg=BG, fg=MUTED, wraplength=460).pack(pady=(0, 18))
+
+    def center():
+        root.update_idletasks()
+        w, h = root.winfo_reqwidth(), root.winfo_reqheight()
+        root.geometry(f"+{(root.winfo_screenwidth() - w) // 2}+{(root.winfo_screenheight() - h) // 3}")
+
+    def page_choose():
+        clear()
+        header(L("Willkommen bei Kinbox", "Welcome to Kinbox"), L("Wie willst du Kinbox nutzen?", "How do you want to use Kinbox?"))
+        cards = {}
+
+        def pick(mode):
+            st["mode"] = mode
+            for m, c in cards.items():
+                bg = BG3 if m == mode else BG2
+                c.config(bg=bg, highlightbackground=ACC if m == mode else LINE)
+                for w in c.winfo_children():
+                    w.config(bg=bg)
+
+        for mode, title, text in (
+            ("local", L("Nur auf diesem PC", "Just this PC"),
+             L("Kinbox läuft unsichtbar im Hintergrund und startet bei jeder Anmeldung mit. Kein Zugriff aus dem Netzwerk.",
+               "Kinbox runs invisibly in the background and starts when you sign in. No network access.")),
+            ("lan", L("Server fürs Heimnetz", "Server for your home network"),
+             L("Handys, Tablets und andere PCs im WLAN können Kinbox nutzen. Die Windows-Firewall fragt einmal nach.",
+               "Phones, tablets and other PCs on your Wi-Fi can use Kinbox. Windows Firewall will ask once.")),
+        ):
+            c = tk.Frame(body, bg=BG2, highlightthickness=2, highlightbackground=LINE, padx=18, pady=14, cursor="hand2")
+            c.pack(fill="x", pady=5)
+            tk.Label(c, text=title, font=font(12, True), bg=BG2, fg=TEXT, anchor="w").pack(fill="x")
+            tk.Label(c, text=text, font=font(10), bg=BG2, fg=MUTED, anchor="w", justify="left",
+                     wraplength=430).pack(fill="x", pady=(2, 0))
+            for w in (c, *c.winfo_children()):
+                w.bind("<Button-1>", lambda e, m=mode: pick(m))
+            cards[mode] = c
+        pick(st["mode"])
+        bar = tk.Frame(body, bg=BG)
+        bar.pack(fill="x", pady=(22, 0))
+        button(bar, L("Einrichten", "Set up"), page_install).pack(side="right")
+        center()
+
+    def work():
+        try:
+            ensure_tools(lambda name, done, total: st.update(file=name, done_b=done, total_b=total))
+            setup(st["mode"])
+            subprocess.Popen([sys.executable], cwd=BASE_DIR, creationflags=0x00000008 | 0x00000200)  # Server unsichtbar
+            st["ready"] = True
+        except Exception as e:
+            st["error"] = str(e)
+
+    def page_install():
+        clear()
+        header(L("Kinbox wird eingerichtet …", "Setting up Kinbox …"),
+               L("yt-dlp, ffmpeg und deno werden heruntergeladen (ca. 150 MB). Das dauert einen Moment.",
+                 "Downloading yt-dlp, ffmpeg and deno (about 150 MB). This takes a moment."))
+        info = tk.Label(body, text="", font=font(10), bg=BG, fg=TEXT, anchor="w")
+        info.pack(fill="x")
+        pb = ttk.Progressbar(body, style="K.Horizontal.TProgressbar", length=460, maximum=100)
+        pb.pack(fill="x", pady=(6, 10))
+        st.update(error=None, file="")
+        threading.Thread(target=work, daemon=True).start()
+
+        def poll():
+            if st["error"]:
+                return page_error()
+            if st["ready"]:
+                return page_done()
+            if st["file"]:
+                mb = lambda n: f"{n / 1e6:.0f} MB"  # noqa: E731
+                info.config(text=f"{st['file']}  ·  {mb(st['done_b'])}" + (f" / {mb(st['total_b'])}" if st["total_b"] else ""))
+                pb.config(value=st["done_b"] * 100 / st["total_b"] if st["total_b"] else 0)
+            else:
+                info.config(text=L("Richte ein …", "Configuring …"))
+            root.after(100, poll)
+        poll()
+        center()
+
+    def page_error():
+        clear()
+        header(L("Das hat nicht geklappt", "That didn't work"),
+               L("Prüfe die Internetverbindung und versuch es nochmal.", "Check your internet connection and try again."))
+        tk.Label(body, text=st["error"], font=font(9), bg=BG2, fg="#ff6b6b", wraplength=440, justify="left",
+                 padx=12, pady=10).pack(fill="x")
+        bar = tk.Frame(body, bg=BG)
+        bar.pack(fill="x", pady=(22, 0))
+        button(bar, L("Nochmal versuchen", "Try again"), page_install).pack(side="right")
+        button(bar, L("Zurück", "Back"), page_choose, primary=False).pack(side="right", padx=8)
+        center()
+
+    def field(label, value):
+        tk.Label(body, text=label, font=font(9, True), bg=BG, fg=MUTED, anchor="w").pack(fill="x", pady=(8, 2))
+        row = tk.Frame(body, bg=BG2, highlightthickness=1, highlightbackground=LINE)
+        row.pack(fill="x")
+        e = tk.Entry(row, font=("Consolas", 11), bg=BG2, fg=TEXT, readonlybackground=BG2, relief="flat", bd=0)
+        e.insert(0, value)
+        e.config(state="readonly")
+        e.pack(side="left", fill="x", expand=True, padx=10, pady=8)
+        copy = tk.Label(row, text=L("Kopieren", "Copy"), font=font(9, True), bg=BG3, fg=TEXT, padx=10, pady=4, cursor="hand2")
+
+        def do_copy(_):
+            root.clipboard_clear()
+            root.clipboard_append(value)
+            copy.config(text=L("Kopiert ✓", "Copied ✓"))
+            root.after(1500, lambda: copy.winfo_exists() and copy.config(text=L("Kopieren", "Copy")))
+        copy.bind("<Button-1>", do_copy)
+        copy.pack(side="right", padx=6)
+
+    def page_done():
+        clear()
+        users_load()
+        local, port, token = st["mode"] == "local", int(SETTINGS["port"]), admin_user()["token"]
+        header(L("Fertig! Kinbox läuft.", "Done! Kinbox is running."),
+               L("Trag Adresse und Token in der Browser-Erweiterung unter Einstellungen ein. "
+                 "Kinbox startet ab jetzt automatisch – ein Doppelklick auf Kinbox.exe öffnet die Mediathek.",
+                 "Enter the address and token in the browser extension's settings. "
+                 "Kinbox now starts automatically – double-click Kinbox.exe to open the library."))
+        field(L("Adresse", "Address"), f"http://{'127.0.0.1' if local else lan_ip()}:{port}")
+        field("Token", token)
+        bar = tk.Frame(body, bg=BG)
+        bar.pack(fill="x", pady=(24, 0))
+        button(bar, L("Mediathek öffnen", "Open library"),
+               lambda: webbrowser.open(f"http://127.0.0.1:{port}/library?token={token}")).pack(side="right")
+        button(bar, L("Schließen", "Close"), root.destroy, primary=False).pack(side="right", padx=8)
+        center()
+
+    page_choose()
+    root.mainloop()
+    if not st["ready"]:
+        SETTINGS_FILE.unlink(missing_ok=True)  # abgebrochen → beim nächsten Start erneut fragen
+
+
+def exe_start() -> None:
+    """Doppelklick auf Kinbox.exe (ohne Konsole gebaut): läuft schon → Mediathek öffnen; erster Start →
+    Einrichtungsfenster; sonst Server unsichtbar starten (Ausgaben in kinbox.log)."""
     import socket
     import webbrowser
     port = int(SETTINGS["port"])
@@ -2067,34 +2266,14 @@ def exe_start() -> None:
         users_load()
         webbrowser.open(f"http://127.0.0.1:{port}/library?token={admin_user()['token']}")
         return
-    if FIRST_RUN or SETTINGS["host"] != "127.0.0.1":
-        ctypes.windll.kernel32.AllocConsole()
-        sys.stdout = sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
-        sys.stdin = open("CONIN$", encoding="utf-8")
-    else:
-        sys.stdout = sys.stderr = open(BASE_DIR / "kinbox.log", "w", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stderr = open(BASE_DIR / "kinbox.log", "w", encoding="utf-8", buffering=1)
+    if FIRST_RUN:
+        return setup_gui()
     try:
         ensure_tools()
     except Exception as e:
         print(f" [!] Download fehlgeschlagen: {e}")
-        if FIRST_RUN:
-            SETTINGS_FILE.unlink(missing_ok=True)  # beim nächsten Start erneut fragen
-            input(" Enter zum Beenden ...")
         return
-    if FIRST_RUN:
-        print()
-        print(" Wie willst du Kinbox nutzen?")
-        print("   1 = Nur auf diesem PC (Standalone)")
-        print("   2 = Als Server fuer alle Geraete im Heimnetz")
-        local = input(" Auswahl [1/2]: ").strip() != "2"
-        setup("local" if local else "lan")
-        if local:  # unsichtbar neu starten, Konsole schließen
-            subprocess.Popen([sys.executable], cwd=BASE_DIR, creationflags=0x00000008 | 0x00000200)
-            time.sleep(3)
-            users_load()
-            webbrowser.open(f"http://127.0.0.1:{port}/library?token={admin_user()['token']}")
-            input(" Fertig - Enter zum Schliessen ...")
-            return
     main()
 
 

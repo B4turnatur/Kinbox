@@ -38,9 +38,8 @@ yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of 
 
 1. Download **`Kinbox.exe`** and **`Kinbox-Extension.zip`** from the [latest release](https://github.com/B4turnatur/Kinbox/releases/latest).
 2. Put `Kinbox.exe` in its own folder, e.g. `C:\Kinbox`, and double-click it. Windows may warn "Windows protected your PC". Click **More info → Run anyway**. The exe isn't signed.
-3. On the first start it downloads yt-dlp, ffmpeg and deno (about 150 MB) into `tools\`, then asks:
-   **1 = Only this PC (standalone)** or **2 = Server for the home network**. For 2, allow access when the Windows firewall asks.
-4. It shows the **token** for the extension. Kinbox starts automatically when you sign in. Double-clicking `Kinbox.exe` again opens the library.
+3. A setup window opens. Choose **Just this PC** or **Server for your home network** and click **Set up**. Kinbox downloads yt-dlp, ffmpeg and deno (about 150 MB) into `tools\`. For the home network, allow access when the Windows firewall asks.
+4. The window shows the **address** and **token** for the extension (with copy buttons). Kinbox starts automatically when you sign in. Double-clicking `Kinbox.exe` again opens the library.
 
 To update yt-dlp, click "Update yt-dlp" in the extension settings.
 

@@ -22,14 +22,14 @@ Die Oberfläche ist zweisprachig: Deutsch bei deutschem Browser, sonst Englisch.
 
 1. Den Ordner `server` irgendwohin kopieren, z. B. `C:\Kinbox`.
 2. **Rechtsklick auf `install.bat` → „Als Administrator ausführen"**.
-   Installiert Python (falls nötig), yt-dlp, Flask, Waitress, ffmpeg und deno und gibt Port 8765 in der Firewall frei (nur privates Netzwerk).
+   Installiert Python (falls nötig), yt-dlp, Flask, Waitress, ffmpeg und deno.
    Falls Python neu installiert wurde, `install.bat` danach ein zweites Mal starten.
-3. Einmal ab- und wieder anmelden (damit Windows ffmpeg/deno findet).
-4. `start.bat` doppelklicken. Im Fenster stehen **Token** und Download-Ordner.
-5. Die IP des Rechners herausfinden: `ipconfig` → „IPv4-Adresse", z. B. `192.168.178.20`.
+3. Auswählen, wie du Kinbox nutzen willst:
+   - **1 = Nur auf diesem PC (Standalone)** – für alle mit nur einem Computer. Kinbox läuft unsichtbar im Hintergrund, startet bei der Anmeldung und ist aus dem Netzwerk nicht erreichbar. Keine Admin-Rechte nötig. Der Installer zeigt den **Token** an. In der Erweiterung als Adresse `http://127.0.0.1:8765` eintragen. Die Desktop-Verknüpfung „Kinbox“ öffnet die Mediathek.
+   - **2 = Server fürs Heimnetz** – für Handy und andere PCs. Gibt Port 8765 in der Firewall frei (nur privates Netzwerk) und richtet auf Wunsch den Autostart beim Hochfahren ein (auch ohne Anmeldung). Danach `start.bat` starten. Im Fenster stehen **Token** und Download-Ordner. Die IP des Rechners findest du mit `ipconfig` → „IPv4-Adresse", z. B. `192.168.178.20`.
+4. Einmal ab- und wieder anmelden (damit Windows ffmpeg/deno findet).
 
-**Automatisch beim Hochfahren starten:** Rechtsklick auf `autostart.bat` → „Als Administrator ausführen".
-Der Server läuft dann unsichtbar im Hintergrund, auch ohne Anmeldung. Den Token findest du in `settings.json`.
+Umstellen geht jederzeit, indem du `install.bat` erneut startest. Autostart nachträglich: Rechtsklick auf `autostart.bat` → „Als Administrator ausführen". Den Token findest du auch in `settings.json`.
 
 ### Linux / macOS
 

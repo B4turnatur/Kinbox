@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.1.1"
+APP_VERSION = "3.2.0"
 BASE_DIR = Path(__file__).resolve().parent
 SETTINGS_FILE = BASE_DIR / "settings.json"
 JOBS_FILE = BASE_DIR / "jobs.json"
@@ -67,7 +67,7 @@ def load_settings() -> dict:
     data = {}
     if SETTINGS_FILE.exists():
         try:
-            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8-sig"))  # -sig: Windows-Editor speichert mit BOM
         except Exception as e:  # kaputte Datei nicht still überschreiben
             print(f"[!] settings.json konnte nicht gelesen werden: {e}")
             sys.exit(1)
@@ -1976,5 +1976,42 @@ def main():
         app.run(host=host, port=port, threaded=True)
 
 
+def setup(mode: str) -> None:
+    """Vom Installer aufgerufen: „local“ = nur dieser PC (Standalone), „lan“ = Server fürs Heimnetz."""
+    local = mode == "local"
+    SETTINGS["host"] = "127.0.0.1" if local else "0.0.0.0"
+    save_settings(SETTINGS)
+    users_load()
+    token, port = admin_user()["token"], int(SETTINGS["port"])
+    if IS_WINDOWS:
+        # Desktop-Link zur Mediathek; bei „local“ zusätzlich Autostart bei der Anmeldung (ohne Admin/Passwort)
+        ps = r"""
+$lnk = [Environment]::GetFolderPath('Startup') + '\Kinbox.lnk'
+Set-Content -Path ([Environment]::GetFolderPath('Desktop') + '\Kinbox.url') -Value "[InternetShortcut]`r`nURL=$env:KB_URL"
+if ($env:KB_LOCAL -eq '1') {
+  $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+  $s.TargetPath = $env:KB_PYW; $s.Arguments = '"' + $env:KB_PY + '"'; $s.WorkingDirectory = $env:KB_DIR; $s.Save()
+} else { Remove-Item $lnk -ErrorAction SilentlyContinue }
+"""
+        pyw = Path(sys.executable).with_name("pythonw.exe")
+        env = {**os.environ, "KB_LOCAL": "1" if local else "0", "KB_PYW": str(pyw), "KB_DIR": str(BASE_DIR),
+               "KB_PY": str(BASE_DIR / "server.py"),
+               "KB_URL": f"http://127.0.0.1:{port}/library" + (f"?token={token}" if local else "")}
+        subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], env=env)
+        if local and pyw.exists():
+            subprocess.Popen([str(pyw), str(BASE_DIR / "server.py")], cwd=BASE_DIR,
+                             creationflags=0x00000008 | 0x00000200)  # DETACHED_PROCESS | NEW_PROCESS_GROUP
+    print()
+    print(" Browser-Erweiterung -> Einstellungen:")
+    print(f"   Adresse: http://{'127.0.0.1' if local else '<IP-dieses-PCs>'}:{port}")
+    print(f"   Token  : {token}")
+    if local:
+        print(" Kinbox laeuft jetzt unsichtbar im Hintergrund und startet bei jeder Anmeldung mit.")
+        print(" Mediathek: Desktop-Verknuepfung \"Kinbox\".")
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:2] == ["--setup"] and len(sys.argv) > 2:
+        setup(sys.argv[2])
+    else:
+        main()

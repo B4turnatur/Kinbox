@@ -38,13 +38,14 @@ yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of 
 
 1. Copy the `server` folder anywhere, e.g. `C:\Kinbox`.
 2. **Right-click `install.bat` → "Run as administrator".**
-   It installs Python (if needed), yt-dlp, Flask, Waitress, ffmpeg and deno, and opens port 8765 in the firewall (private networks only).
+   It installs Python (if needed), yt-dlp, Flask, Waitress, ffmpeg and deno.
    If Python was just installed, run `install.bat` a second time.
-3. Sign out and back in once, so Windows finds ffmpeg/deno.
-4. Double-click `start.bat`. The window shows the **token** and the download folder.
-5. Find the PC's IP address: `ipconfig` → "IPv4 Address", e.g. `192.168.178.20`.
+3. Choose how you want to use Kinbox:
+   - **1 = Only this PC (standalone)** – for people with just one computer. Kinbox runs invisibly in the background, starts when you sign in, and can't be reached from the network. No admin rights needed. The installer shows the **token**. In the extension, use the address `http://127.0.0.1:8765`. A "Kinbox" desktop shortcut opens the library.
+   - **2 = Server for the home network** – for phones and other PCs. Opens port 8765 in the firewall (private networks only) and can set up autostart at boot (also without sign-in). Then start `start.bat`. The window shows the **token** and the download folder. Find the PC's IP address with `ipconfig` → "IPv4 Address", e.g. `192.168.178.20`.
+4. Sign out and back in once, so Windows finds ffmpeg/deno.
 
-**Start automatically at boot:** right-click `autostart.bat` → "Run as administrator". The server then runs invisibly in the background, even when nobody is signed in. The token is in `settings.json`.
+You can switch later by running `install.bat` again. Set up autostart afterwards: right-click `autostart.bat` → "Run as administrator". The token is also in `settings.json`.
 
 > The installer scripts are in German. They only show a few short status messages.
 

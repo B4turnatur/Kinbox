@@ -38,24 +38,43 @@ echo [3/4] Installiere ffmpeg und deno (fuer YouTube noetig) ...
 where ffmpeg >nul 2>&1 || winget install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements
 where deno   >nul 2>&1 || winget install -e --id DenoLand.Deno --accept-source-agreements --accept-package-agreements
 
-rem ---- Firewall ----------------------------------------------------------
-echo [4/4] Oeffne Port 8765 in der Windows-Firewall (nur privates Netzwerk) ...
+rem ---- Einsatzart ------------------------------------------------------
+echo [4/4] Wie willst du Kinbox nutzen?
+echo     1 = Nur auf diesem PC (Standalone: kein Netzwerk, startet bei der Anmeldung)
+echo     2 = Als Server fuer alle Geraete im Heimnetz (Handy, andere PCs)
+choice /c 12 /m "Auswahl"
+if errorlevel 2 goto :lan
+
+%PY% server.py --setup local
+goto :done
+
+:lan
 net session >nul 2>&1
 if %errorlevel%==0 (
     netsh advfirewall firewall delete rule name="Kinbox" >nul 2>&1
     netsh advfirewall firewall delete rule name="NAS-Downloader" >nul 2>&1
     netsh advfirewall firewall add rule name="Kinbox" dir=in action=allow protocol=TCP localport=8765 profile=private,domain >nul
-    echo     Firewall-Regel angelegt.
+    echo     Firewall-Regel angelegt ^(nur privates Netzwerk^).
 ) else (
-    echo     [!] Keine Admin-Rechte - Firewall-Regel uebersprungen.
-    echo         Rechtsklick auf install.bat ^> "Als Administrator ausfuehren", um sie anzulegen.
+    echo     [!] Keine Admin-Rechte - Firewall-Regel und Autostart uebersprungen.
+    echo         Rechtsklick auf install.bat ^> "Als Administrator ausfuehren", um sie einzurichten.
 )
+%PY% server.py --setup lan
+net session >nul 2>&1
+if not %errorlevel%==0 goto :lanstart
+echo.
+choice /c JN /m "Autostart beim Hochfahren einrichten (auch ohne Anmeldung)"
+if errorlevel 2 goto :lanstart
+call autostart.bat
+goto :done
+:lanstart
+echo.
+echo   Starte den Server jetzt mit start.bat.
 
+:done
 echo.
 echo ============================================================
-echo   Fertig! Starte jetzt start.bat.
-echo   Beim ersten Start wird ein Token erzeugt und angezeigt -
-echo   den traegst du in der Browser-Erweiterung ein.
+echo   Fertig!
 echo   Tipp: Nach der Installation von ffmpeg/deno einmal neu
 echo   anmelden, damit Windows den PATH aktualisiert.
 echo ============================================================

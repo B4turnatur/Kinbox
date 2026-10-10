@@ -163,6 +163,12 @@
     "Kein Link gefunden": "No link found", "Auftrag läuft noch": "Job is still running", "Erst abbrechen, dann löschen": "Cancel first, then delete",
     "Das gehört jemand anderem": "That belongs to someone else", "Datei konnte nicht gelöscht werden (wird sie gerade benutzt?)": "File could not be deleted (is it in use?)",
     "Uhrzeit bitte als HH:MM angeben": "Please enter the time as HH:MM", "Update läuft bereits": "Update already running",
+    "Kinbox-Update": "Kinbox update", "Jetzt aktualisieren": "Update now", "Suche nach Updates …": "Checking for updates …",
+    "Lade Update …": "Downloading update …", "Kinbox startet neu …": "Kinbox is restarting …",
+    "Kinbox jetzt aktualisieren? Der Server startet dafür kurz neu.": "Update Kinbox now? The server will restart briefly.",
+    "Kinbox antwortet nicht – bitte Seite neu laden": "Kinbox isn't responding – please reload the page",
+    "Erst laufende Downloads abwarten, dann aktualisieren": "Wait for running downloads to finish, then update",
+    "Kinbox ist schon aktuell": "Kinbox is already up to date",
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
@@ -174,6 +180,8 @@
     ["Für ein GIF ist das Video zu lang ({0} s). Bitte vorher auf max. 90 s zuschneiden.", "The video is too long for a GIF ({0} s). Please trim it to max. 90 s first."],
     ["Zu lang für {0} MB – bei dieser Größe gehen etwa {1} Minuten. Bitte zuschneiden.", "Too long for {0} MB – that size fits about {1} minutes. Please trim."],
     ["Ordner nicht nutzbar: {0}", "Folder not usable: {0}"],
+    ["Neue Version {0} verfügbar (installiert: {1})", "New version {0} available (installed: {1})"], ["Kinbox {0} ist aktuell", "Kinbox {0} is up to date"],
+    ["Kinbox {0} ist installiert", "Kinbox {0} is installed"], ["Update fehlgeschlagen: {0}", "Update failed: {0}"], ["GitHub nicht erreichbar: {0}", "GitHub unreachable: {0}"],
     ["Preset „{0}\" gespeichert", "Preset \"{0}\" saved"], ["Playlist · {0} Videos · {1}", "Playlist · {0} videos · {1}"], ["Playlist · {0} Videos", "Playlist · {0} videos"],
     ["✓ Schon in der Kinbox ({0}):", "✓ Already in Kinbox ({0}):"], ["vor {0} Tagen", "{0} days ago"], ["vor {0} Min.", "{0} min ago"], ["vor {0} Std.", "{0} h ago"],
     ["+ {0} weitere", "+ {0} more"], ["{0} · Verbunden · {1}", "{0} · Connected · {1}"], ["Verbunden · {0}", "Connected · {0}"], ["Ziel: {0}", "Destination: {0}"],

@@ -112,6 +112,8 @@ yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of 
 
 To update yt-dlp, click "Update yt-dlp" in the extension settings.
 
+To update **Kinbox itself**: open the library as admin → ⚙ → **Server** → "Update now". Kinbox downloads the latest release and restarts on its own (works for `Kinbox.exe` and for the Python install; wait until running downloads have finished). The browser extension is updated separately.
+
 ### Windows with Python (install.bat)
 
 1. Copy the `server` folder anywhere, e.g. `C:\Kinbox`.

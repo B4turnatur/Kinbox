@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.4.2"
+APP_VERSION = "3.5.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -1932,6 +1932,115 @@ def update_ytdlp():
         _update_lock.release()
 
 
+
+# ---- Kinbox selbst aktualisieren ---------------------------------------------
+
+REPO = "B4turnatur/Kinbox"
+
+
+def _https(url: str, timeout: int = 60):
+    import ssl
+    import urllib.request
+    try:  # eigene Zertifikatsliste (siehe ensure_tools)
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = None
+    req = urllib.request.Request(url, headers={"User-Agent": f"Kinbox/{APP_VERSION}"})
+    return urllib.request.urlopen(req, context=ctx, timeout=timeout)
+
+
+def _vtuple(v: str) -> tuple:
+    return tuple(int(x) for x in re.findall(r"\d+", v)[:3])
+
+
+def _latest_release() -> dict:
+    with _https(f"https://api.github.com/repos/{REPO}/releases/latest", 15) as r:
+        return json.load(r)
+
+
+@app.get("/api/app-update")
+def app_update_check():
+    need_admin()
+    try:
+        latest = _latest_release()["tag_name"].lstrip("v")
+    except Exception as e:
+        return err(f"GitHub nicht erreichbar: {e}", 502)
+    return jsonify(current=APP_VERSION, latest=latest, available=_vtuple(latest) > _vtuple(APP_VERSION))
+
+
+def _fetch_update(rel: dict) -> None:
+    """Neue Version neben die alte legen: exe → Kinbox.new.exe, sonst server.py + static/ überschreiben."""
+    if FROZEN:
+        url = next(a["browser_download_url"] for a in rel["assets"] if a["name"] == "Kinbox.exe")
+        tmp = BASE_DIR / "Kinbox.new.exe.part"
+        with _https(url, 120) as r, open(tmp, "wb") as fh:
+            shutil.copyfileobj(r, fh)
+        if tmp.stat().st_size < 1_000_000:
+            raise RuntimeError("Download unvollständig")
+        tmp.replace(BASE_DIR / "Kinbox.new.exe")
+        return
+    import io
+    import zipfile
+    with _https(f"https://github.com/{REPO}/archive/refs/tags/{rel['tag_name']}.zip", 120) as r:
+        z = zipfile.ZipFile(io.BytesIO(r.read()))
+    files = {}
+    for m in z.namelist():
+        path = m.split("/", 1)[-1]  # Archiv-Ordner „Kinbox-3.x.y/“ abschneiden
+        if m.endswith("/") or not (path == "server/server.py" or path.startswith("server/static/")):
+            continue
+        dest = (BASE_DIR / path[len("server/"):]).resolve()
+        if BASE_DIR.resolve() not in dest.parents:
+            continue
+        files[dest] = z.read(m)
+    if not any(p.name == "server.py" for p in files):
+        raise RuntimeError("server.py fehlt im Archiv")
+    for dest, data in files.items():  # erst alles laden, dann schreiben – kein halbes Update bei Netzfehler
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+
+
+def _restart() -> None:
+    time.sleep(1)  # Antwort an den Browser noch rausschicken
+    env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1", "KB_UPDATED": "1"}
+    if FROZEN:
+        # Helfer wartet, bis die alte exe weg ist (Datei gesperrt), tauscht sie aus und startet sie neu
+        exe = str(Path(sys.executable)).replace("'", "''")
+        new = str(BASE_DIR / "Kinbox.new.exe").replace("'", "''")
+        ps = (f"for($i=0;$i -lt 120;$i++){{try{{Move-Item -Force '{new}' '{exe}' -ErrorAction Stop;break}}"
+              f"catch{{Start-Sleep -Milliseconds 500}}}}; Start-Process '{exe}'")
+        subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], env=env,
+                         creationflags=0x08000000 | 0x00000200)  # CREATE_NO_WINDOW | NEW_PROCESS_GROUP
+    else:
+        cmd = [sys.executable, str(Path(__file__).resolve())] + sys.argv[1:]
+        if IS_WINDOWS:  # pythonw → wieder unsichtbar, python (start.bat) → neues Konsolenfenster
+            hidden = Path(sys.executable).stem.lower() == "pythonw"
+            kw = {"creationflags": (0x00000008 if hidden else 0x00000010) | 0x00000200}
+        else:
+            kw = {"start_new_session": True}  # ponytail: unter systemd lieber Restart=always nutzen
+        subprocess.Popen(cmd, cwd=BASE_DIR, env=env, **kw)
+    os._exit(0)
+
+
+@app.post("/api/app-update")
+def app_update_run():
+    need_admin()
+    if _running_count():
+        return err("Erst laufende Downloads abwarten, dann aktualisieren")
+    if not _update_lock.acquire(blocking=False):
+        return err("Update läuft bereits")
+    try:
+        rel = _latest_release()
+        if _vtuple(rel["tag_name"]) <= _vtuple(APP_VERSION):
+            raise RuntimeError("Kinbox ist schon aktuell")
+        _fetch_update(rel)
+    except Exception as e:
+        _update_lock.release()
+        return err(f"Update fehlgeschlagen: {e}", 502)
+    save_jobs_soon()
+    threading.Thread(target=_restart, daemon=True).start()  # Sperre bleibt bis zum Beenden gesetzt
+    return jsonify(ok=True, version=rel["tag_name"].lstrip("v"))
+
 def migrate_owners():
     """Alte Aufträge/Dateien ohne Besitzer gehören dem Admin."""
     aid = admin_user()["id"]
@@ -1961,6 +2070,13 @@ def main():
         threading.Thread(target=_worker, daemon=True).start()
     threading.Thread(target=_saver, daemon=True).start()
     host, port = SETTINGS["host"], int(SETTINGS["port"])
+    if os.environ.pop("KB_UPDATED", None):  # nach Selbst-Update: warten, bis der alte Prozess den Port freigibt
+        import socket
+        for _ in range(60):
+            with socket.socket() as sock:
+                if sock.connect_ex(("127.0.0.1", port)) != 0:
+                    break
+            time.sleep(0.5)
     print("=" * 60)
     print(f" Kinbox {APP_VERSION}")
     print(f" Adresse : http://<IP-dieses-PCs>:{port}")

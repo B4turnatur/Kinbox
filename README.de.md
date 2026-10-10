@@ -93,6 +93,8 @@ Läuft auf deinem PC, keine Cloud, kein Konto. Nur dieser PC oder fürs ganze He
 
 yt-dlp aktualisierst du in den Einstellungen der Erweiterung mit „yt-dlp aktualisieren“.
 
+**Kinbox selbst** aktualisierst du in der Mediathek als Admin → ⚙ → **Server** → „Jetzt aktualisieren“. Kinbox lädt die neueste Version von GitHub und startet sich selbst neu (geht mit `Kinbox.exe` und mit der Python-Installation; vorher laufende Downloads abwarten). Die Browser-Erweiterung wird weiterhin separat aktualisiert.
+
 ### Windows mit Python (install.bat)
 
 1. Den Ordner `server` irgendwohin kopieren, z. B. `C:\Kinbox`.

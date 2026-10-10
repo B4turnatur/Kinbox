@@ -314,6 +314,8 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
       <label>Von <input type="time" id="nStart"></label>
       <label>Bis <input type="time" id="nEnd"></label>
     </div>
+    <h2>⬆ Kinbox-Update</h2>
+    <div class="row"><span class="hint" id="updInfo"></span><button type="button" class="btn primary" id="appUpdate" hidden>Jetzt aktualisieren</button></div>
     <div class="hint" id="srvInfo"></div>
     <div class="row"><button type="button" class="btn" id="runCleanupAll">Bei allen aufräumen</button><button type="button" class="btn" data-close>Schließen</button><button class="btn primary">Speichern</button></div>
   </form>
@@ -588,7 +590,8 @@ async function openSettings(tab = "profile") {
     if (isAdmin) {
       $("#nStart").value = p.night.start.padStart(5, "0");
       $("#nEnd").value = p.night.end.padStart(5, "0");
-      $("#srvInfo").innerHTML = `yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>`;
+      checkAppUpdate();
+      $("#srvInfo").innerHTML = `Kinbox ${esc(p.version)} · yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>`;
     }
     if (!isAdmin && (tab === "family" || tab === "server")) tab = "profile";
     showTab(tab);
@@ -617,6 +620,29 @@ $("#runCleanup").addEventListener("click", async () => {
 });
 $("#runCleanupAll").addEventListener("click", async () => {
   try { const r = await api("/api/cleanup/run?all=1", { method: "POST" }); toast(r.removed ? `${r.removed} Dateien gelöscht` : "Nichts zu löschen – alle halten ihre Regeln ein"); load(); } catch (e) { toast(e.message, true); }
+});
+async function checkAppUpdate() {
+  $("#appUpdate").hidden = true;
+  $("#updInfo").textContent = t("Suche nach Updates …");
+  try {
+    const r = await api("/api/app-update");
+    $("#updInfo").textContent = r.available ? t(`Neue Version ${r.latest} verfügbar (installiert: ${r.current})`) : t(`Kinbox ${r.current} ist aktuell`);
+    $("#appUpdate").hidden = !r.available;
+  } catch (e) { $("#updInfo").textContent = e.message; }
+}
+$("#appUpdate").addEventListener("click", async () => {
+  if (!confirm(t("Kinbox jetzt aktualisieren? Der Server startet dafür kurz neu."))) return;
+  const b = $("#appUpdate"); b.disabled = true; $("#updInfo").textContent = t("Lade Update …");
+  try {
+    const r = await api("/api/app-update", { method: "POST" });
+    $("#updInfo").textContent = t("Kinbox startet neu …");
+    for (let i = 0; i < 60; i++) {  // warten, bis die neue Version antwortet
+      await new Promise((ok) => setTimeout(ok, 2000));
+      try { if ((await api("/api/ping")).version === r.version) { toast(t(`Kinbox ${r.version} ist installiert`)); return setTimeout(() => location.reload(), 1500); } } catch {}
+    }
+    toast(t("Kinbox antwortet nicht – bitte Seite neu laden"), true);
+  } catch (e) { toast(e.message, true); $("#updInfo").textContent = ""; }
+  finally { b.disabled = false; }
 });
 $("#srvForm").addEventListener("submit", async (e) => {
   e.preventDefault();

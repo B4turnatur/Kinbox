@@ -34,7 +34,17 @@ yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of 
 
 ## 1. Install the server (once)
 
-### Windows
+### Easiest: Kinbox.exe (Windows, no Python needed)
+
+1. Download **`Kinbox.exe`** and **`Kinbox-Extension.zip`** from the [latest release](https://github.com/B4turnatur/Kinbox/releases/latest).
+2. Put `Kinbox.exe` in its own folder, e.g. `C:\Kinbox`, and double-click it. Windows may warn "Windows protected your PC". Click **More info → Run anyway**. The exe isn't signed.
+3. On the first start it downloads yt-dlp, ffmpeg and deno (about 150 MB) into `tools\`, then asks:
+   **1 = Only this PC (standalone)** or **2 = Server for the home network**. For 2, allow access when the Windows firewall asks.
+4. It shows the **token** for the extension. Kinbox starts automatically when you sign in. Double-clicking `Kinbox.exe` again opens the library.
+
+To update yt-dlp, click "Update yt-dlp" in the extension settings.
+
+### Windows with Python (install.bat)
 
 1. Copy the `server` folder anywhere, e.g. `C:\Kinbox`.
 2. **Right-click `install.bat` → "Run as administrator".**
@@ -60,7 +70,7 @@ python3 server/server.py
 
 1. Open `chrome://extensions` (Edge: `edge://extensions`).
 2. Turn on **Developer mode** (top right).
-3. **"Load unpacked"** → select the `extension` folder.
+3. **"Load unpacked"** → select the `extension` folder (or the unzipped `Kinbox-Extension.zip`).
 4. The settings page opens. Enter the address (`http://192.168.178.20:8765`) and the token, then click **Save & test**.
 5. Tip: pin the extension via the puzzle icon.
 

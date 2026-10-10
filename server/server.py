@@ -25,12 +25,14 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.2.0"
-BASE_DIR = Path(__file__).resolve().parent
+APP_VERSION = "3.3.0"
+FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
+BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
+TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
 SETTINGS_FILE = BASE_DIR / "settings.json"
 JOBS_FILE = BASE_DIR / "jobs.json"
 LIBRARY_FILE = BASE_DIR / "library.json"
-STATIC_DIR = BASE_DIR / "static"
+STATIC_DIR = (Path(getattr(sys, "_MEIPASS", BASE_DIR))) / "static"
 IS_WINDOWS = os.name == "nt"
 
 DEFAULT_SETTINGS = {
@@ -87,13 +89,16 @@ def save_settings(settings: dict) -> None:
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+FIRST_RUN = not SETTINGS_FILE.exists()
 SETTINGS = load_settings()
 SETTINGS_LOCK = threading.Lock()
 
 
 def ytdlp_base() -> list[str]:
     cmd = SETTINGS.get("ytdlp_command") or []
-    return list(cmd) if cmd else [sys.executable, "-m", "yt_dlp"]
+    if cmd:
+        return list(cmd)
+    return [str(TOOLS_DIR / "yt-dlp.exe")] if FROZEN else [sys.executable, "-m", "yt_dlp"]
 
 
 def download_root() -> Path:
@@ -1914,7 +1919,7 @@ def update_ytdlp():
     if not _update_lock.acquire(blocking=False):
         return err("Update läuft bereits")
     try:
-        if SETTINGS.get("ytdlp_command"):
+        if SETTINGS.get("ytdlp_command") or FROZEN:
             cmd = ytdlp_base() + ["-U"]
         else:
             cmd = [sys.executable, "-m", "pip", "install", "-U", "yt-dlp[default]"]
@@ -1990,15 +1995,17 @@ $lnk = [Environment]::GetFolderPath('Startup') + '\Kinbox.lnk'
 Set-Content -Path ([Environment]::GetFolderPath('Desktop') + '\Kinbox.url') -Value "[InternetShortcut]`r`nURL=$env:KB_URL"
 if ($env:KB_LOCAL -eq '1') {
   $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-  $s.TargetPath = $env:KB_PYW; $s.Arguments = '"' + $env:KB_PY + '"'; $s.WorkingDirectory = $env:KB_DIR; $s.Save()
+  $s.TargetPath = $env:KB_PYW; $s.Arguments = $(if ($env:KB_PY) { '"' + $env:KB_PY + '"' } else { '' }); $s.WorkingDirectory = $env:KB_DIR; $s.Save()
 } else { Remove-Item $lnk -ErrorAction SilentlyContinue }
 """
-        pyw = Path(sys.executable).with_name("pythonw.exe")
-        env = {**os.environ, "KB_LOCAL": "1" if local else "0", "KB_PYW": str(pyw), "KB_DIR": str(BASE_DIR),
-               "KB_PY": str(BASE_DIR / "server.py"),
+        # Kinbox.exe: Autostart in beiden Modi (Heimnetz mit sichtbarem Fenster), sonst pythonw + server.py
+        pyw = Path(sys.executable) if FROZEN else Path(sys.executable).with_name("pythonw.exe")
+        arg = "" if FROZEN else str(BASE_DIR / "server.py")
+        env = {**os.environ, "KB_LOCAL": "1" if local or FROZEN else "0", "KB_PYW": str(pyw), "KB_DIR": str(BASE_DIR),
+               "KB_PY": arg,
                "KB_URL": f"http://127.0.0.1:{port}/library" + (f"?token={token}" if local else "")}
         subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps], env=env)
-        if local and pyw.exists():
+        if local and pyw.exists() and not FROZEN:
             subprocess.Popen([str(pyw), str(BASE_DIR / "server.py")], cwd=BASE_DIR,
                              creationflags=0x00000008 | 0x00000200)  # DETACHED_PROCESS | NEW_PROCESS_GROUP
     print()
@@ -2010,8 +2017,84 @@ if ($env:KB_LOCAL -eq '1') {
         print(" Mediathek: Desktop-Verknuepfung \"Kinbox\".")
 
 
+TOOL_DOWNLOADS = {  # offizielle Quellen, jeweils neueste Version
+    "yt-dlp.exe": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
+    "ffmpeg.exe": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    "deno.exe": "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip",
+}
+
+
+def ensure_tools() -> None:
+    """Kinbox.exe: fehlende Programme beim ersten Start nach tools/ laden."""
+    import urllib.request
+    import zipfile
+    TOOLS_DIR.mkdir(exist_ok=True)
+    os.environ["PATH"] = str(TOOLS_DIR) + os.pathsep + os.environ.get("PATH", "")
+    for name, url in TOOL_DOWNLOADS.items():
+        if (TOOLS_DIR / name).exists():
+            continue
+        print(f" Lade {name} herunter ...", flush=True)
+        tmp = TOOLS_DIR / (name + ".part")
+        urllib.request.urlretrieve(url, tmp)
+        if url.endswith(".zip"):
+            with zipfile.ZipFile(tmp) as z:
+                for m in z.namelist():
+                    base = m.rsplit("/", 1)[-1]
+                    if base in ("ffmpeg.exe", "ffprobe.exe", "deno.exe"):
+                        (TOOLS_DIR / base).write_bytes(z.read(m))
+            tmp.unlink()
+        else:
+            tmp.replace(TOOLS_DIR / name)
+
+
+def exe_start() -> None:
+    """Doppelklick auf Kinbox.exe (ohne Fenster gebaut): läuft schon → Mediathek öffnen; erster Start → Konsole,
+    Programme laden, Modus wählen; Standalone läuft danach unsichtbar (Ausgaben in kinbox.log)."""
+    import ctypes
+    import socket
+    import webbrowser
+    port = int(SETTINGS["port"])
+    with socket.socket() as sock:
+        running = sock.connect_ex(("127.0.0.1", port)) == 0
+    if running:
+        users_load()
+        webbrowser.open(f"http://127.0.0.1:{port}/library?token={admin_user()['token']}")
+        return
+    if FIRST_RUN or SETTINGS["host"] != "127.0.0.1":
+        ctypes.windll.kernel32.AllocConsole()
+        sys.stdout = sys.stderr = open("CONOUT$", "w", encoding="utf-8", buffering=1)
+        sys.stdin = open("CONIN$", encoding="utf-8")
+    else:
+        sys.stdout = sys.stderr = open(BASE_DIR / "kinbox.log", "w", encoding="utf-8", buffering=1)
+    try:
+        ensure_tools()
+    except Exception as e:
+        print(f" [!] Download fehlgeschlagen: {e}")
+        if FIRST_RUN:
+            SETTINGS_FILE.unlink(missing_ok=True)  # beim nächsten Start erneut fragen
+            input(" Enter zum Beenden ...")
+        return
+    if FIRST_RUN:
+        print()
+        print(" Wie willst du Kinbox nutzen?")
+        print("   1 = Nur auf diesem PC (Standalone)")
+        print("   2 = Als Server fuer alle Geraete im Heimnetz")
+        local = input(" Auswahl [1/2]: ").strip() != "2"
+        setup("local" if local else "lan")
+        if local:  # unsichtbar neu starten, Konsole schließen
+            subprocess.Popen([sys.executable], cwd=BASE_DIR, creationflags=0x00000008 | 0x00000200)
+            time.sleep(3)
+            users_load()
+            webbrowser.open(f"http://127.0.0.1:{port}/library?token={admin_user()['token']}")
+            input(" Fertig - Enter zum Schliessen ...")
+            return
+    main()
+
+
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--setup"] and len(sys.argv) > 2:
         setup(sys.argv[2])
+    elif FROZEN:
+        exe_start()
     else:
         main()

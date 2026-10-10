@@ -13,3 +13,10 @@ __pycache__/
 # Persönliche Arbeitsnotizen (nur lokal)
 CLAUDE.md
 PROGRESS.md
+
+# Kinbox.exe-Build und Laufzeit
+build/
+dist/
+*.spec
+server/tools/
+kinbox.log

@@ -18,7 +18,17 @@ Die Oberfläche ist zweisprachig: Deutsch bei deutschem Browser, sonst Englisch.
 
 ## 1. Server einrichten (einmalig)
 
-### Windows
+### Am einfachsten: Kinbox.exe (Windows, ohne Python)
+
+1. Im [neuesten Release](https://github.com/B4turnatur/Kinbox/releases/latest) **`Kinbox.exe`** und **`Kinbox-Extension.zip`** herunterladen.
+2. `Kinbox.exe` in einen eigenen Ordner legen, z. B. `C:\Kinbox`, und doppelklicken. Windows warnt eventuell „Der Computer wurde durch Windows geschützt“. Dann auf **Weitere Informationen → Trotzdem ausführen** klicken. Die exe ist nicht signiert.
+3. Beim ersten Start lädt sie yt-dlp, ffmpeg und deno herunter (ca. 150 MB) und legt sie in `tools\` ab. Danach fragt sie:
+   **1 = Nur auf diesem PC (Standalone)** oder **2 = Server fürs Heimnetz**. Bei 2 die Nachfrage der Windows-Firewall mit „Zugriff zulassen“ bestätigen.
+4. Sie zeigt den **Token** für die Erweiterung an. Kinbox startet ab jetzt bei der Anmeldung automatisch. Ein erneuter Doppelklick auf `Kinbox.exe` öffnet die Mediathek.
+
+yt-dlp aktualisierst du in den Einstellungen der Erweiterung mit „yt-dlp aktualisieren“.
+
+### Windows mit Python (install.bat)
 
 1. Den Ordner `server` irgendwohin kopieren, z. B. `C:\Kinbox`.
 2. **Rechtsklick auf `install.bat` → „Als Administrator ausführen"**.
@@ -42,7 +52,7 @@ python3 server/server.py
 
 1. `chrome://extensions` öffnen (Edge: `edge://extensions`).
 2. Oben rechts **Entwicklermodus** einschalten.
-3. **„Entpackte Erweiterung laden"** → den Ordner `extension` auswählen.
+3. **„Entpackte Erweiterung laden"** → den Ordner `extension` auswählen (oder die entpackte `Kinbox-Extension.zip`).
 4. Die Einstellungsseite öffnet sich: Adresse `http://192.168.178.20:8765` und Token eintragen → **Speichern & testen**.
 5. Tipp: Erweiterung über das Puzzle-Symbol anheften.
 

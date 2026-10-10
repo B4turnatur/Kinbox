@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.4.1"
+APP_VERSION = "3.4.2"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -2168,7 +2168,11 @@ def setup_gui() -> None:
         try:
             ensure_tools(lambda name, done, total: st.update(file=name, done_b=done, total_b=total))
             setup(st["mode"])
-            subprocess.Popen([sys.executable], cwd=BASE_DIR, creationflags=0x00000008 | 0x00000200)  # Server unsichtbar
+            # eigener Entpack-Ordner: sonst nutzt der Server den des Fensters, der beim Schließen gelöscht wird
+            # (dann fehlt library.html → nur „Kinbox läuft.“)
+            env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+            subprocess.Popen([sys.executable], cwd=BASE_DIR, env=env,
+                             creationflags=0x00000008 | 0x00000200)  # Server unsichtbar
             st["ready"] = True
         except Exception as e:
             st["error"] = str(e)

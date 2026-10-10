@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pyinstaller flask waitress
+      - run: pip install pyinstaller flask waitress certifi
       - run: pyinstaller --onefile --noconsole --name Kinbox --add-data "server/static;static" server/server.py
       - run: Compress-Archive -Path extension/* -DestinationPath dist/Kinbox-Extension.zip
       - run: gh release create "${{ github.ref_name }}" dist/Kinbox.exe dist/Kinbox-Extension.zip --generate-notes

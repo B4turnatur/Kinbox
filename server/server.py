@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.3.1"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -2026,8 +2026,14 @@ TOOL_DOWNLOADS = {  # offizielle Quellen, jeweils neueste Version
 
 def ensure_tools() -> None:
     """Kinbox.exe: fehlende Programme beim ersten Start nach tools/ laden."""
+    import ssl
     import urllib.request
     import zipfile
+    try:  # eigene Zertifikatsliste: frisches Windows (Server) hat die GitHub-Stammzertifikate noch nicht
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = None
     TOOLS_DIR.mkdir(exist_ok=True)
     os.environ["PATH"] = str(TOOLS_DIR) + os.pathsep + os.environ.get("PATH", "")
     for name, url in TOOL_DOWNLOADS.items():
@@ -2035,7 +2041,8 @@ def ensure_tools() -> None:
             continue
         print(f" Lade {name} herunter ...", flush=True)
         tmp = TOOLS_DIR / (name + ".part")
-        urllib.request.urlretrieve(url, tmp)
+        with urllib.request.urlopen(url, context=ctx, timeout=60) as r, open(tmp, "wb") as f:
+            shutil.copyfileobj(r, f)
         if url.endswith(".zip"):
             with zipfile.ZipFile(tmp) as z:
                 for m in z.namelist():

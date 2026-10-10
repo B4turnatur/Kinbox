@@ -1,6 +1,7 @@
 // Fügt auf YouTube einen „Kinbox"-Button unter dem Video ein (mit Schnellmenü).
 (() => {
   const BTN_ID = "kinbox-btn";
+  const MENU_ID = "kinbox-menu";
   let presets = [];
   let enabled = true;
 
@@ -56,8 +57,7 @@
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1zM5 19h14a1 1 0 1 1 0 2H5a1 1 0 1 1 0-2z"/></svg>
           <span>Kinbox</span>
         </button>
-        <button class="kinbox-more" title="Mehr Optionen">▾</button>
-        <div class="kinbox-menu" hidden></div>`;
+        <button class="kinbox-more" title="Mehr Optionen">▾</button>`;
       translateEl(wrap);
       if (anchor) {
         anchor.prepend(wrap);
@@ -75,26 +75,39 @@
   }
 
   async function toggleMenu(wrap) {
-    const menu = wrap.querySelector(".kinbox-menu");
-    if (!menu.hidden) { menu.hidden = true; return; }
+    if (document.getElementById(MENU_ID)) return closeMenu();
     if (!presets.length) {
       const r = await chrome.runtime.sendMessage({ type: "presets" }).catch(() => null);
       presets = r?.presets || [];
     }
-    menu.innerHTML = "";
+    const menu = document.createElement("div");
+    menu.id = MENU_ID;
     const add = (label, fn, cls = "") => {
       const b = document.createElement("button");
       b.className = cls;
       b.textContent = t(label);
-      b.addEventListener("click", (e) => { e.stopPropagation(); menu.hidden = true; fn(); });
+      b.addEventListener("click", (e) => { e.stopPropagation(); closeMenu(); fn(); });
       menu.appendChild(b);
     };
     add("⬇  Standard-Einstellungen", () => quick(null));
     for (const p of presets) add(`${p.icon || "•"}  ${t(p.name)}`, () => quick(p.id));
     add("⚙  Mit Optionen … (zuschneiden, Kapitel …)", () => chrome.runtime.sendMessage({ type: "openCustom", url: currentUrl() }), "kinbox-accent");
-    menu.hidden = false;
-    const close = (e) => { if (!wrap.contains(e.target)) { menu.hidden = true; document.removeEventListener("click", close, true); } };
-    document.addEventListener("click", close, true);
+    // direkt an <body>: YouTubes Knopfleiste schneidet überstehende Elemente ab
+    document.body.appendChild(menu);
+    const r = wrap.getBoundingClientRect(), h = menu.offsetHeight;
+    menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + "px";
+    menu.style.top = (r.bottom + 6 + h > innerHeight && r.top - 6 - h > 0 ? r.top - 6 - h : r.bottom + 6) + "px";
+    menu._close = (e) => { if (e.type === "scroll" || !menu.contains(e.target) && !wrap.contains(e.target)) closeMenu(); };
+    document.addEventListener("pointerdown", menu._close, true);  // „click“ kommt nicht immer an (YouTube baut beim Drücken um)
+    addEventListener("scroll", menu._close, true);
+  }
+
+  function closeMenu() {
+    const menu = document.getElementById(MENU_ID);
+    if (!menu) return;
+    document.removeEventListener("pointerdown", menu._close, true);
+    removeEventListener("scroll", menu._close, true);
+    menu.remove();
   }
 
   function currentUrl() {

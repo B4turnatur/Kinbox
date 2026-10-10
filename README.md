@@ -1,22 +1,85 @@
+<div align="center">
+
+<img src="docs/images/logo.png" width="104" alt="Kinbox logo">
+
 # Kinbox
 
-🇬🇧 English · 🇩🇪 [Deutsch](README.de.md)
+**The family media box**
 
-**The family media box:** a self-hosted [yt-dlp](https://github.com/yt-dlp/yt-dlp) server for any PC on your home network. You use it through a browser extension, a web library and your phone's share menu, with no terminal needed. Everyone in the family gets their own profile.
+Save videos and music from YouTube, TikTok & 1,000+ sites to your own PC with one click –<br>with a browser extension, a web library and a profile for everyone. No terminal needed.
 
-```
- Browser (Chrome/Edge/Brave/Opera …)            PC/server at home
- ┌────────────────────────────┐ home network ┌──────────────────────────┐
- │ "Kinbox" extension          │ ───────────► │ server.py (port 8765)    │
- │  • popup with every option  │  HTTP+token  │  └─ yt-dlp + ffmpeg + deno│
- │  • "Kinbox" button on       │ ◄─────────── │  → saves to local disk   │
- │    YouTube, TikTok …        │   progress   │  → web library /library  │
- └────────────────────────────┘              └──────────────────────────┘
-```
+[![Release](https://img.shields.io/github/v/release/B4turnatur/Kinbox?style=for-the-badge&color=7c5cff&label=Release)](https://github.com/B4turnatur/Kinbox/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/B4turnatur/Kinbox/total?style=for-the-badge&color=a48bff&label=Downloads)](https://github.com/B4turnatur/Kinbox/releases)
+[![License](https://img.shields.io/github/license/B4turnatur/Kinbox?style=for-the-badge&color=3ecf8e&label=License)](LICENSE)
+<br>
+![Windows](https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-333?style=for-the-badge&logo=linux&logoColor=white)
+![Chrome](https://img.shields.io/badge/Chrome%20%C2%B7%20Edge%20%C2%B7%20Brave-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)
+![yt-dlp](https://img.shields.io/badge/powered%20by-yt--dlp-ff6b6b?style=for-the-badge)
 
-The UI is shown in German or English, depending on your browser language.
+🇬🇧 **English** · 🇩🇪 [Deutsch](README.de.md)
 
-## Features
+<h3>
+  <a href="https://github.com/B4turnatur/Kinbox/releases/latest">⬇️ Download Kinbox.exe</a>
+  &nbsp;·&nbsp;
+  <a href="#1-install-the-server-once">🚀 Get started</a>
+  &nbsp;·&nbsp;
+  <a href="#-family--profiles">👨‍👩‍👧 Family</a>
+</h3>
+
+<br>
+
+<img src="docs/images/hero-en.png" alt="Kinbox library on desktop and phone">
+
+</div>
+
+<br>
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+### 🎬 One click
+A Kinbox button right on YouTube, TikTok, Instagram, X and Reddit – or right-click on any page.
+
+</td>
+<td width="33%" valign="top">
+
+### 🎚️ Every option
+Up to 8K & 60 fps, MP3/FLAC, trimming, chapters, subtitles, playlists, GIF or small for WhatsApp.
+
+</td>
+<td width="33%" valign="top">
+
+### 📚 Your own library
+Search, play and save to your phone – in the browser, installable as an app.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 👨‍👩‍👧 For the whole family
+“Who's watching?” with PIN, own folder, sharing, storage quotas and invite links.
+
+</td>
+<td valign="top">
+
+### 🧹 Cleans up after itself
+After saving to a device, after X days or above a size – per person, 📌 to keep.
+
+</td>
+<td valign="top">
+
+### 🏠 Stays at home
+Runs on your PC, no cloud, no account. Just this PC or your whole home network.
+
+</td>
+</tr>
+</table>
+
+<details>
+<summary><b>📋 All features</b></summary>
 
 - **Video:** best quality up to 8K, MP4/MKV/WebM/MOV, H.264/H.265/VP9/AV1, prefer 60 fps, size estimate per quality
 - **Audio:** MP3, M4A, Opus, FLAC, WAV, 96–320 kbps, loudness normalization, **music mode** (clean artist/title tags, square cover)
@@ -32,6 +95,8 @@ The UI is shown in German or English, depending on your browser language.
 
 yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of them.
 
+</details>
+
 ## 1. Install the server (once)
 
 ### Easiest: Kinbox.exe (Windows, no Python needed)
@@ -40,6 +105,8 @@ yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of 
 2. Put `Kinbox.exe` in its own folder, e.g. `C:\Kinbox`, and double-click it. Windows may warn "Windows protected your PC". Click **More info → Run anyway**. The exe isn't signed.
 3. A setup window opens. Choose **Just this PC** or **Server for your home network** and click **Set up**. Kinbox downloads yt-dlp, ffmpeg and deno (about 150 MB) into `tools\`. For the home network, allow access when the Windows firewall asks.
 4. The window shows the **address** and **token** for the extension (with copy buttons). Kinbox starts automatically when you sign in. Double-clicking `Kinbox.exe` again opens the library.
+
+<p align="center"><img src="docs/images/setup-en.png" alt="Kinbox setup window"></p>
 
 To update yt-dlp, click "Update yt-dlp" in the extension settings.
 
@@ -73,9 +140,13 @@ python3 server/server.py
 4. The settings page opens. Enter the address (`http://192.168.178.20:8765`) and the token, then click **Save & test**.
 5. Tip: pin the extension via the puzzle icon.
 
+<p align="center"><img src="docs/images/extension-en.png" width="720" alt="Kinbox extension popup"></p>
+
 Shortcuts: **Alt+Shift+D** popup · **Alt+Shift+Q** download the current page · **Alt+Shift+M** as MP3 (change them at `chrome://extensions/shortcuts`).
 
 ## 👨‍👩‍👧 Family & profiles
+
+<p align="center"><img src="docs/images/profiles-en.png" width="720" alt="Who's watching? profile picker"></p>
 
 **Add a person (admin):** library → your profile (top right) → **Family** → name, picture, optional PIN and quota → **＋ Add** → **✉ Invite**. The invitation contains a link that signs the person in directly, plus the address and token for the extension.
 

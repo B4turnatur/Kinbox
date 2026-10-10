@@ -328,7 +328,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmtBytes = (n) => { if (!n) return ""; const u = ["B","KB","MB","GB","TB"]; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return `${n.toFixed(n < 10 && i > 1 ? 1 : 0)} ${u[i]}`; };
 const fmtDur = (s) => { if (!s) return ""; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
-const ago = (t) => { const d = (Date.now() / 1000 - t); if (d < 60) return "gerade eben"; if (d < 3600) return `vor ${Math.floor(d / 60)} Min.`; if (d < 86400) return `vor ${Math.floor(d / 3600)} Std.`; if (d < 86400 * 30) return `vor ${Math.floor(d / 86400)} Tagen`; return new Date(t * 1000).toLocaleDateString(); };
+const ago = (ts) => { const d = (Date.now() / 1000 - ts); if (d < 60) return t("gerade eben"); if (d < 3600) return t(`vor ${Math.floor(d / 60)} Min.`); if (d < 86400) return t(`vor ${Math.floor(d / 3600)} Std.`); if (d < 86400 * 30) return t(`vor ${Math.floor(d / 86400)} Tagen`); return new Date(ts * 1000).toLocaleDateString(); };
 const KIND = { video: "Video", audio: "Audio", gif: "GIF", image: "Bild", other: "Datei" };
 const AVATARS = ["😀","😎","🦊","🐼","🐯","🦄","🐸","🐙","🦁","🐶","🐱","🐻","🚀","⚽","🎮","🎧","🌸","👑","🧸","🍕","🌈","🐬","🦖","🎨"];
 const COLORS = ["#7c5cff","#ff6b6b","#3ecf8e","#f5a524","#2fb7ff","#ff5cc8","#9aa0a6","#00c2a8"];

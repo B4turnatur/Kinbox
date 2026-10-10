@@ -1,20 +1,82 @@
+<div align="center">
+
+<img src="docs/images/logo.png" width="104" alt="Kinbox logo">
+
 # Kinbox
 
-🇬🇧 [English](README.md) · 🇩🇪 Deutsch
+**Die Medienkiste für die Familie**
 
-**Die Medienkiste für die Familie:** yt-dlp auf einem PC oder Server bei dir zu Hause, bedient über eine Browser-Erweiterung, eine Web-Mediathek und die Teilen-Funktion am Handy – ganz ohne Terminal. Jede Person bekommt ein eigenes Profil.
+Videos und Musik von YouTube, TikTok & 1.000+ Seiten mit einem Klick auf den eigenen PC laden –<br>mit Browser-Erweiterung, Web-Mediathek und eigenem Profil für jede Person. Ganz ohne Terminal.
 
-```
- Browser (Chrome/Edge/Brave/Opera …)            PC/Server im Heimnetz
- ┌────────────────────────────┐   Heimnetz   ┌──────────────────────────┐
- │ Erweiterung „Kinbox"        │ ───────────► │ server.py (Port 8765)    │
- │  • Popup mit allen Optionen │   HTTP+Token │  └─ yt-dlp + ffmpeg + deno│
- │  • „Kinbox"-Button auf      │ ◄─────────── │  → speichert lokal       │
- │    YouTube, TikTok …        │  Fortschritt │  → Mediathek /library    │
- └────────────────────────────┘              └──────────────────────────┘
-```
+[![Release](https://img.shields.io/github/v/release/B4turnatur/Kinbox?style=for-the-badge&color=7c5cff&label=Release)](https://github.com/B4turnatur/Kinbox/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/B4turnatur/Kinbox/total?style=for-the-badge&color=a48bff&label=Downloads)](https://github.com/B4turnatur/Kinbox/releases)
+[![License](https://img.shields.io/github/license/B4turnatur/Kinbox?style=for-the-badge&color=3ecf8e&label=Lizenz)](LICENSE)
+<br>
+![Windows](https://img.shields.io/badge/Windows-0078D4?style=for-the-badge&logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-333?style=for-the-badge&logo=linux&logoColor=white)
+![Chrome](https://img.shields.io/badge/Chrome%20%C2%B7%20Edge%20%C2%B7%20Brave-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)
+![yt-dlp](https://img.shields.io/badge/powered%20by-yt--dlp-ff6b6b?style=for-the-badge)
 
-Die Oberfläche ist zweisprachig: Deutsch bei deutschem Browser, sonst Englisch.
+🇬🇧 [English](README.md) · 🇩🇪 **Deutsch**
+
+<h3>
+  <a href="https://github.com/B4turnatur/Kinbox/releases/latest">⬇️ Kinbox.exe herunterladen</a>
+  &nbsp;·&nbsp;
+  <a href="#1-server-einrichten-einmalig">🚀 Einrichten</a>
+  &nbsp;·&nbsp;
+  <a href="#-familie--profile">👨‍👩‍👧 Familie</a>
+</h3>
+
+<br>
+
+<img src="docs/images/hero-de.png" alt="Kinbox-Mediathek auf PC und Handy">
+
+</div>
+
+<br>
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+### 🎬 Ein Klick genügt
+Kinbox-Button direkt auf YouTube, TikTok, Instagram, X und Reddit – oder Rechtsklick auf jeder Seite.
+
+</td>
+<td width="33%" valign="top">
+
+### 🎚️ Alles einstellbar
+Bis 8K & 60 fps, MP3/FLAC, Zuschneiden, Kapitel, Untertitel, Playlists, GIF oder klein für WhatsApp.
+
+</td>
+<td width="33%" valign="top">
+
+### 📚 Eigene Mediathek
+Suchen, abspielen und aufs Handy laden – im Browser, als App installierbar.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 👨‍👩‍👧 Für die ganze Familie
+„Wer schaut?“ mit PIN, eigener Ordner, Teilen, Speicher-Kontingent und Einladungslinks.
+
+</td>
+<td valign="top">
+
+### 🧹 Räumt selbst auf
+Nach dem Laden aufs Gerät, nach X Tagen oder ab einer Größe – pro Person, mit 📌 zum Behalten.
+
+</td>
+<td valign="top">
+
+### 🏠 Bleibt bei dir
+Läuft auf deinem PC, keine Cloud, kein Konto. Nur dieser PC oder fürs ganze Heimnetz.
+
+</td>
+</tr>
+</table>
 
 ## 1. Server einrichten (einmalig)
 
@@ -24,6 +86,8 @@ Die Oberfläche ist zweisprachig: Deutsch bei deutschem Browser, sonst Englisch.
 2. `Kinbox.exe` in einen eigenen Ordner legen, z. B. `C:\Kinbox`, und doppelklicken. Windows warnt eventuell „Der Computer wurde durch Windows geschützt“. Dann auf **Weitere Informationen → Trotzdem ausführen** klicken. Die exe ist nicht signiert.
 3. Ein Einrichtungsfenster öffnet sich. **Nur auf diesem PC** oder **Server fürs Heimnetz** wählen und auf **Einrichten** klicken. Kinbox lädt yt-dlp, ffmpeg und deno herunter (ca. 150 MB) und legt sie in `tools\` ab. Beim Heimnetz die Nachfrage der Windows-Firewall mit „Zugriff zulassen“ bestätigen.
 4. Das Fenster zeigt **Adresse** und **Token** für die Erweiterung an (mit Kopieren-Knopf). Kinbox startet ab jetzt bei der Anmeldung automatisch. Ein erneuter Doppelklick auf `Kinbox.exe` öffnet die Mediathek.
+
+<p align="center"><img src="docs/images/setup-de.png" alt="Kinbox-Einrichtungsfenster"></p>
 
 yt-dlp aktualisierst du in den Einstellungen der Erweiterung mit „yt-dlp aktualisieren“.
 
@@ -55,7 +119,11 @@ python3 server/server.py
 4. Die Einstellungsseite öffnet sich: Adresse `http://192.168.178.20:8765` und Token eintragen → **Speichern & testen**.
 5. Tipp: Erweiterung über das Puzzle-Symbol anheften.
 
+<p align="center"><img src="docs/images/extension-de.png" width="720" alt="Popup der Kinbox-Erweiterung"></p>
+
 ## 👨‍👩‍👧 Familie & Profile
+
+<p align="center"><img src="docs/images/profiles-de.png" width="720" alt="Profilauswahl „Wer schaut?“"></p>
 
 Jede Person hat ihren **eigenen Bereich**: eigener Ordner, eigene Mediathek, eigene Warteschlange, eigene Aufräum-Regeln und ein eigener Schlüssel (Token) für Erweiterung und Handy.
 

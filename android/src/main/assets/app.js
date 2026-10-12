@@ -28,10 +28,13 @@
   }
   const area = { get, set };
 
-  // Links: Kinbox-Seiten in der App, alles andere im Browser
+  // Links: Kinbox-Seiten (Heim- und Unterwegs-Adresse) in der App, alles andere im Browser
   function go(url) {
-    const u = new URL(url, location.href);
-    if (u.host === location.host) location.href = u.href;
+    const u = new URL(url, location.href), s = store();
+    const own = [location.href, s.serverUrl, s.serverUrl2].some((x) => {
+      try { return x && new URL(/^https?:/.test(x) ? x : "http://" + x).host === u.host; } catch { return false; }
+    });
+    if (own) location.href = u.href;
     else if (/^https?:$/.test(u.protocol)) A.open(K, u.href);
   }
 

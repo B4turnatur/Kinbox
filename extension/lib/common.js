@@ -173,10 +173,6 @@ export function qualityLabel(h) {
   return { 4320: "8K", 2160: "4K", 1440: "2K" }[h] || `${h}p`;
 }
 
-export function isVideoPage(url) {
-  return /^https?:\/\//.test(url || "") && !/^https?:\/\/(chrome|edge)\.google\.com\/webstore/.test(url);
-}
-
 export function youtubeId(url) {
   try {
     const u = new URL(url);

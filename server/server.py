@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.6.1"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -1597,10 +1597,6 @@ def delete_user(uid):
 
 
 # ---- Aufträge -----------------------------------------------------------------
-
-def _visible(entry_owner: str, shared: bool = False) -> bool:
-    return entry_owner == me()["id"] or shared or is_admin()
-
 
 @app.post("/api/info")
 def info():

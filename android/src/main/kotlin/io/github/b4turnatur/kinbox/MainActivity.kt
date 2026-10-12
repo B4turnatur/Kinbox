@@ -143,10 +143,14 @@ class MainActivity : Activity() {
     private fun store() = JSONObject(prefs.getString("store", null) ?: "{}")
     private fun saveStore(json: String) = prefs.edit().putString("store", json).apply()
 
-    private fun server(): String {
-        val s = store().optString("serverUrl").trim().trimEnd('/')
+    private fun url(key: String): String {
+        val s = store().optString(key).trim().trimEnd('/')
         return if (s.isEmpty() || s.startsWith("http")) s else "http://$s"
     }
+
+    // Heim-Adresse oder (falls die nicht antwortet) Unterwegs-Adresse; umgeschaltet in pollOnce(), JS macht das selbst (common.js)
+    @Volatile private var away = false
+    private fun server(): String = url("serverUrl2").takeIf { away && it.isNotEmpty() } ?: url("serverUrl")
 
     private fun token() = store().optString("token")
 
@@ -195,10 +199,11 @@ class MainActivity : Activity() {
     }
 
     private fun pollOnce() {
-        val c = URL(server() + "/api/jobs").openConnection() as HttpURLConnection
-        c.connectTimeout = 8000; c.readTimeout = 8000
-        c.setRequestProperty("X-Token", token())
-        val jobs = JSONArray(c.inputStream.bufferedReader().use { it.readText() })
+        val jobs = try { jobs() } catch (e: Exception) {
+            if (url("serverUrl2").isEmpty()) throw e
+            away = !away   // Netz gewechselt → andere Adresse
+            jobs()
+        }
         val notifyOn = store().optBoolean("notify", true)
         synchronized(this) {
             val t = tracked()
@@ -224,6 +229,13 @@ class MainActivity : Activity() {
             }
             prefs.edit().putString("tracked", t.toString()).apply()
         }
+    }
+
+    private fun jobs(): JSONArray {
+        val c = URL(server() + "/api/jobs").openConnection() as HttpURLConnection
+        c.connectTimeout = 4000; c.readTimeout = 8000
+        c.setRequestProperty("X-Token", token())
+        return JSONArray(c.inputStream.bufferedReader().use { it.readText() })
     }
 
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
@@ -267,7 +279,7 @@ class MainActivity : Activity() {
             if (!r.isForMainFrame) return false
             val u = r.url
             if (u.scheme == "kinbox") { connectAsk(u.toString()); return true }
-            if (u.path?.startsWith("/kbapp/") == true || u.encodedAuthority == Uri.parse(server()).encodedAuthority) return false
+            if (u.path?.startsWith("/kbapp/") == true || listOf(url("serverUrl"), url("serverUrl2")).any { it.isNotEmpty() && u.encodedAuthority == Uri.parse(it).encodedAuthority }) return false
             try { startActivity(Intent(Intent.ACTION_VIEW, u)) } catch (_: ActivityNotFoundException) { }
             return true
         }

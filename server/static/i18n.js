@@ -68,7 +68,9 @@
     // ---- Einstellungen der Erweiterung
     "Kinbox – Einstellungen": "Kinbox – Settings", "1. Mit deinem Server verbinden": "1. Connect to your server",
     "Die Adresse und den Token zeigt": "The address and token are shown by", "beim Start auf dem Server an (Token steht auch in": "when it starts on the server (the token is also in",
-    "Server-Adresse": "Server address", "aus settings.json": "from settings.json", "Speichern & testen": "Save & test", "2. Server": "2. Server",
+    "Server-Adresse": "Server address", "aus settings.json": "from settings.json", "Speichern & testen": "Save & test",
+    "Unterwegs-Adresse (optional)": "Away address (optional)", "(über die Unterwegs-Adresse)": "(via the away address)",
+    "Z. B. die Tailscale-Adresse. Antwortet die Server-Adresse nicht, nimmt Kinbox automatisch diese.": "E.g. the Tailscale address. If the server address doesn't respond, Kinbox uses this one automatically.", "2. Server": "2. Server",
     "(nur Admin)": "(admin only)", "Profile für die Familie verwaltest du in der": "You manage family profiles in the", "Mediathek → ⚙ → Familie": "library → ⚙ → Family",
     "Download-Ordner auf dem Server": "Download folder on the server", "Gleichzeitige Downloads": "Simultaneous downloads", "yt-dlp aktualisieren": "Update yt-dlp",
     "YouTube ändert oft etwas – wenn Downloads plötzlich scheitern, hilft meist ein Update.": "YouTube changes things often – if downloads suddenly fail, an update usually helps.",

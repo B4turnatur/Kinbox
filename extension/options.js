@@ -1,4 +1,4 @@
-import { api, getSettings, saveSettings, normalizeUrl, BUILTIN_PRESETS, DEFAULT_OPTIONS, DEFAULT_SETTINGS, escapeHtml, libraryUrl, fmtBytes } from "./lib/common.js";
+import { api, serverBase, getSettings, saveSettings, normalizeUrl, BUILTIN_PRESETS, DEFAULT_OPTIONS, DEFAULT_SETTINGS, escapeHtml, libraryUrl, fmtBytes } from "./lib/common.js";
 
 const $ = (s) => document.querySelector(s);
 let settings;
@@ -9,6 +9,7 @@ init();
 async function init() {
   settings = await getSettings();
   $("#serverUrl").value = settings.serverUrl;
+  $("#serverUrl2").value = settings.serverUrl2;
   $("#token").value = settings.token;
   $("#showYoutubeButton").checked = settings.showYoutubeButton;
   $("#notify").checked = settings.notify;
@@ -44,20 +45,23 @@ function result(el, ok, html) {
 
 async function test(save) {
   const url = normalizeUrl($("#serverUrl").value);
+  const url2 = normalizeUrl($("#serverUrl2").value);
   const token = $("#token").value.trim();
   $("#serverUrl").value = url;
+  $("#serverUrl2").value = url2;
   if (save) {
-    settings.serverUrl = url; settings.token = token;
-    await saveSettings({ serverUrl: url, token });
+    settings.serverUrl = url; settings.serverUrl2 = url2; settings.token = token;
+    await saveSettings({ serverUrl: url, serverUrl2: url2, token });
   }
   if (!url) return result($("#testResult"), false, "Bitte die Adresse des Servers eintragen.");
   $("#testResult").className = "result ok";
   $("#testResult").textContent = "Verbinde …";
   try {
-    const p = await api("/api/ping", { settings: { serverUrl: url, token }, timeout: 8000 });
+    const via = url2 && (await serverBase({ serverUrl: url, serverUrl2: url2 }, true)) === url2;
+    const p = await api("/api/ping", { settings: { serverUrl: url, serverUrl2: url2, token }, timeout: 8000 });
     const y = (v) => (v ? `<span class="yes">✓ ${v === true ? "vorhanden" : escapeHtml(v)}</span>` : `<span class="no">✗ fehlt</span>`);
     const who = p.user ? `<div style="display:flex;align-items:center;gap:10px;margin-top:8px"><span style="width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:19px;background:${escapeHtml(p.user.color)}">${escapeHtml(p.user.avatar)}</span><span>Angemeldet als <b>${escapeHtml(p.user.name)}</b>${p.is_admin ? " (Admin)" : ""}</span></div>` : "";
-    result($("#testResult"), true, `<b>Verbunden!</b>${who}
+    result($("#testResult"), true, `<b>Verbunden!</b>${via ? " (über die Unterwegs-Adresse)" : ""}${who}
 <div class="check" style="margin-top:8px">
   <b>yt-dlp</b><span>${escapeHtml(p.ytdlp)}</span>
   <b>ffmpeg</b>${y(p.ffmpeg)}

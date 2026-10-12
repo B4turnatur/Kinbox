@@ -49,6 +49,7 @@ export const presetIcon = (ch) => ICON_OF[ch] ? icon(ch) : escapeHtml(ch || "•
 
 export const DEFAULT_SETTINGS = {
   serverUrl: "",
+  serverUrl2: "",       // optional: Unterwegs-Adresse (z. B. Tailscale), wenn die Heim-Adresse nicht antwortet
   token: "",
   showYoutubeButton: true,
   showSocialButtons: true,
@@ -99,9 +100,27 @@ export class ApiError extends Error {
   constructor(msg, status) { super(msg); this.status = status; }
 }
 
-export async function api(path, { method = "GET", body, timeout = 20000, settings } = {}) {
+// Heim- oder Unterwegs-Adresse: die erste, die antwortet (Ergebnis 1 Minute gemerkt).
+let _base = "", _baseAt = 0;
+async function reachable(base) {
+  try {
+    await fetch(base + "/api/ping", { signal: AbortSignal.timeout(2000) });
+    return true;
+  } catch { return false; }
+}
+export async function serverBase(s, fresh = false) {
+  const urls = [s.serverUrl, s.serverUrl2].map(normalizeUrl).filter(Boolean);
+  if (urls.length < 2) return urls[0] || "";
+  if (!fresh && urls.includes(_base) && Date.now() - _baseAt < 60000) return _base;
+  _base = urls[0];
+  for (const u of urls) if (await reachable(u)) { _base = u; break; }
+  _baseAt = Date.now();
+  return _base;
+}
+
+export async function api(path, { method = "GET", body, timeout = 20000, settings, retry = true } = {}) {
   const s = settings || (await getSettings());
-  const base = normalizeUrl(s.serverUrl);
+  const base = await serverBase(s);
   if (!base) throw new ApiError("Kein Server eingestellt – öffne die Einstellungen.", 0);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
@@ -114,6 +133,10 @@ export async function api(path, { method = "GET", body, timeout = 20000, setting
       signal: ctrl.signal,
     });
   } catch (e) {
+    if (retry && normalizeUrl(s.serverUrl2) && Date.now() - _baseAt > 3000) {  // Netz gewechselt → andere Adresse probieren
+      _baseAt = 0;
+      return api(path, { method, body, timeout, settings: s, retry: false });
+    }
     throw new ApiError(e.name === "AbortError" ? "Zeitüberschreitung – Server antwortet nicht." : "Server nicht erreichbar. Läuft er und stimmt die Adresse?", 0);
   } finally {
     clearTimeout(timer);
@@ -126,7 +149,7 @@ export async function api(path, { method = "GET", body, timeout = 20000, setting
 
 export async function libraryUrl() {
   const s = await getSettings();
-  return `${normalizeUrl(s.serverUrl)}/library?token=${encodeURIComponent(s.token)}`;
+  return `${await serverBase(s)}/library?token=${encodeURIComponent(s.token)}`;
 }
 
 export const SOCIAL_HOSTS = /(^|\.)(tiktok\.com|instagram\.com|x\.com|twitter\.com|reddit\.com)$/i;
@@ -136,7 +159,7 @@ export function isSocial(url) {
 
 export async function fileUrl(jobId, idx) {
   const s = await getSettings();
-  return `${normalizeUrl(s.serverUrl)}/api/jobs/${jobId}/files/${idx}?token=${encodeURIComponent(s.token)}`;
+  return `${await serverBase(s)}/api/jobs/${jobId}/files/${idx}?token=${encodeURIComponent(s.token)}`;
 }
 
 // ---- Formatierung -------------------------------------------------------

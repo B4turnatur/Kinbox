@@ -127,6 +127,8 @@ services:
 Den Admin-Token findest du im Container-Log (Portainer → Containers → kinbox → Logs) und in `kinbox-data/settings.json`.
 Die Mediathek unter `http://<NAS-IP>:8765/library` funktioniert wie gewohnt – auch beide Update-Knöpfe (yt-dlp und Kinbox); Kinbox startet den Container danach selbst neu. Alternativ neueres Image ziehen (Portainer: *Recreate → Re-pull image*).
 
+**Von unterwegs:** per VPN wie [Tailscale](https://tailscale.com) – Port nie im Router freigeben. In Erweiterung und Android-App die Tailscale-Adresse als *Unterwegs-Adresse* eintragen; Kinbox wechselt automatisch, wenn die Heim-Adresse nicht antwortet.
+
 ### Linux / macOS
 
 ```bash

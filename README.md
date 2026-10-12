@@ -149,6 +149,8 @@ services:
 The admin token is in the container log (Portainer → Containers → kinbox → Logs) and in `kinbox-data/settings.json`.
 The library at `http://<NAS-IP>:8765/library` works as usual – both update buttons (yt-dlp and Kinbox) too; Kinbox restarts the container by itself. Pulling a newer image (Portainer: *Recreate → Re-pull image*) also updates.
 
+**Away from home:** use a VPN such as [Tailscale](https://tailscale.com) – never forward the port. In the extension and Android app, enter the Tailscale address as *Away address*; Kinbox switches automatically when the home address doesn't respond.
+
 ### Linux / macOS
 
 ```bash

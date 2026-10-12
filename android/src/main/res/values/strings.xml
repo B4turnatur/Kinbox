@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_label">Kinbox</string>
+    <string name="connect_title">Connect to Kinbox?</string>
+    <string name="connect_text">Server: %1$s\n\nDownloads will then go to this Kinbox.</string>
+    <string name="connect_yes">Connect</string>
+    <string name="cancel">Cancel</string>
+    <string name="connected">Connected ✓</string>
+    <string name="not_invite">That is not a Kinbox invite link.</string>
+    <string name="saving">Saving to phone …</string>
+    <string name="no_download">This file cannot be saved here.</string>
+    <string name="channel">Downloads</string>
+    <string name="done">Download finished ✓</string>
+    <string name="failed">Download failed</string>
+</resources>

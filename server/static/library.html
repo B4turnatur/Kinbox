@@ -315,6 +315,11 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
       <div class="copy"><input id="extUrl" readonly><button type="button" class="btn" data-copy="extUrl">Kopieren</button></div>
       <div class="copy" style="margin-top:6px"><input id="extToken" readonly type="password"><button type="button" class="btn" data-copy="extToken">Kopieren</button></div>
     </details>
+    <details id="appSetup"><summary class="hint" style="cursor:pointer"><svg class="i"><use href="/static/icons.svg#phone"/></svg> Android-App einrichten</summary>
+      <div class="hint" style="margin:8px 0">1. „Kinbox.apk“ aus dem <a href="https://github.com/B4turnatur/Kinbox/releases/latest" target="_blank" rel="noopener">neuesten Release</a> aufs Handy laden und installieren.</div>
+      <div class="hint" style="margin:8px 0">2. Hier am Handy auf „Mit der App verbinden“ tippen.</div>
+      <a class="btn" id="appConnect">Mit der App verbinden</a>
+    </details>
     <div class="row"><button type="button" class="btn" id="switchProfile"><svg class="i"><use href="/static/icons.svg#swap"/></svg> Profil wechseln</button><button type="button" class="btn" data-close>Schließen</button><button class="btn primary">Speichern</button></div>
   </form>
 
@@ -635,6 +640,8 @@ async function openSettings(tab = "profile") {
     $("#profPin").placeholder = me.has_pin ? "unverändert" : "keine PIN";
     $("#profInfo").innerHTML = `${isAdmin ? "Admin · " : ""}${fmtBytes(p.usage) || "0 B"} genutzt${p.quota_gb ? ` von ${p.quota_gb} GB` : ""} · Ordner: <code>${esc(me.folder || "(Hauptordner)")}</code>`;
     $("#extUrl").value = location.origin; $("#extToken").value = m.token;
+    $("#appConnect").href = `kinbox://setup?server=${encodeURIComponent(location.origin)}&token=${encodeURIComponent(m.token)}`;
+    $("#appSetup").hidden = navigator.userAgent.includes("KinboxApp");   // schon in der App
     $("#cAfter").checked = !!p.cleanup.after_pc_download;
     $("#cDays").value = p.cleanup.max_age_days || 0;
     $("#cGb").value = p.cleanup.max_size_gb || 0;

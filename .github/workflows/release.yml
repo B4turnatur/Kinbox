@@ -1,4 +1,4 @@
-# Baut Kinbox.exe + Erweiterungs-ZIP und legt ein GitHub-Release an, sobald ein Tag wie v3.3.0 gepusht wird.
+# Baut Kinbox.exe + Erweiterungs-ZIP + Android-App und legt ein GitHub-Release an, sobald ein Tag wie v3.3.0 gepusht wird.
 name: Release
 
 on:
@@ -20,6 +20,24 @@ jobs:
       - run: python .github/version_info.py "${{ github.ref_name }}"
       - run: pyinstaller --onefile --noconsole --name Kinbox --icon server/static/icon.png --version-file version.txt --add-data "server/static;static" server/server.py
       - run: Compress-Archive -Path extension/* -DestinationPath dist/Kinbox-Extension.zip
-      - run: gh release create "${{ github.ref_name }}" dist/Kinbox.exe dist/Kinbox-Extension.zip --generate-notes
+      # Android-App: nur mit Signaturschlüssel (Secrets KINBOX_KEYSTORE_B64 + KINBOX_KEYSTORE_PASSWORD),
+      # sonst könnten Nutzer spätere Versionen nicht als Update installieren.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Android-App bauen
+        shell: bash
+        env:
+          KS: ${{ secrets.KINBOX_KEYSTORE_B64 }}
+          KINBOX_KEYSTORE_PASSWORD: ${{ secrets.KINBOX_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KS" ]; then echo "::warning::Kein Signaturschlüssel – Release ohne Kinbox.apk"; exit 0; fi
+          echo "$KS" | base64 -d > "$RUNNER_TEMP/kinbox.jks"
+          export KINBOX_KEYSTORE="$RUNNER_TEMP/kinbox.jks"
+          cd android && ./gradlew assembleRelease --no-daemon
+          cp build/outputs/apk/release/kinbox-release.apk ../dist/Kinbox.apk
+      - run: gh release create "${{ github.ref_name }}" dist/Kinbox.exe dist/Kinbox-Extension.zip $(ls dist/Kinbox.apk 2>/dev/null) --generate-notes
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

@@ -131,6 +131,7 @@ input.invalid { border-color: var(--err); }
 .range { position: relative; height: 28px; margin: 6px 12px 10px; }
 .range-track { position: absolute; left: 0; right: 0; top: 12px; height: 4px; border-radius: 2px; background: var(--line); }
 .range-fill { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+.app-player iframe { display: block; width: 100%; aspect-ratio: 16/9; border: 0; border-radius: min(8px, var(--round)); margin: 4px 0 8px; }
 .range input[type=range] {
   position: absolute; inset: 0; width: 100%; margin: 0; padding: 0; background: none; border: none; pointer-events: none; -webkit-appearance: none; appearance: none;
 }

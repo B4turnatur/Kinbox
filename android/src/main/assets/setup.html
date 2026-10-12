@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kinbox</title>
+<link rel="stylesheet" href="/kbapp/theme.css">
+<link rel="stylesheet" href="/kbapp/ui.css">
+<script src="/kbapp/lib/theme.js"></script>
+<style>
+  body { padding: 28px 20px; max-width: 520px; margin: 0 auto; }
+  h1 { display: flex; align-items: center; gap: 10px; font-size: 24px; margin: 0 0 6px; }
+  h1 .i { width: 34px; height: 34px; color: var(--accent); }
+  ol { padding-left: 20px; line-height: 1.5; }
+  li { margin-bottom: 12px; }
+  .primary { width: 100%; margin: 6px 0 22px; }
+  details { color: var(--muted); }
+  input { width: 100%; margin: 8px 0; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .btn { background: var(--bg3); border: 1px solid var(--line); border-radius: min(9px, var(--round)); padding: 8px 14px; font-weight: 600; color: var(--text); }
+</style>
+</head>
+<body>
+<h1><svg class="i"><use href="/kbapp/icons.svg#logo"/></svg> Willkommen bei Kinbox</h1>
+<p class="sub">Verbinde die App einmal mit deiner Kinbox zu Hause – danach kannst du Videos aus jeder App über „Teilen“ laden.</p>
+<ol>
+  <li>Lass dir einen Einladungslink schicken – der Admin erstellt ihn in der Mediathek unter ⚙ → Familie → Einladen.</li>
+  <li>Tippe in WhatsApp &amp; Co. lange auf den Link → Teilen → Kinbox.<br>Oder kopiere den Link und tippe hier:</li>
+</ol>
+<button class="primary" id="paste">Link aus der Zwischenablage einfügen</button>
+<details>
+  <summary>Link von Hand eingeben</summary>
+  <div class="row"><input id="link" placeholder="http://192.168.178.20:8765/library?token=…" spellcheck="false"><button class="btn" id="go">Verbinden</button></div>
+  <p>Oder Adresse und Token einzeln: <a href="/kbapp/options.html">Einstellungen</a></p>
+</details>
+<p class="sub">Funktioniert nur im WLAN zu Hause.</p>
+<script src="/kbapp/lib/i18n.js" data-auto></script>
+<script>
+  document.getElementById("paste").onclick = () => KinboxApp.paste(KB_KEY);
+  document.getElementById("go").onclick = () => KinboxApp.connect(KB_KEY, document.getElementById("link").value);
+</script>
+</body>
+</html>

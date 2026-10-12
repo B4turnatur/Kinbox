@@ -8,6 +8,8 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const params = new URLSearchParams(location.search);
 const isWindow = params.get("window") === "1";
 if (isWindow) document.body.classList.add("window");
+const inApp = !!globalThis.KinboxApp;          // läuft in der Android-App (android/)
+const DEVICE = inApp ? "Aufs Handy" : "Auf PC";
 
 let settings;
 let opts;                    // aktuelle Optionen (werden an den Server geschickt)
@@ -29,6 +31,7 @@ init();
 async function init() {
   settings = await getSettings();
   opts = structuredClone(settings.defaults);
+  if (inApp) $("[data-bind=saveToPc]").parentElement.lastChild.textContent = DEVICE;
   $("#setupHint").hidden = !!settings.serverUrl;
 
   if (params.get("url")) {
@@ -406,6 +409,7 @@ function syncTrimInputs() {
 }
 
 function updateTrimUi() {
+  if (inApp) player.show(youtubeId($("#url").value));
   const d = info?.duration;
   $("#range").hidden = !d;
   if (d) {
@@ -421,7 +425,29 @@ function sameVideoInTab() {
   return tabId && (!youtubeId(tabUrl) || youtubeId(tabUrl) === youtubeId($("#url").value));
 }
 
+// In der Android-App gibt es keinen Tab mit dem Video – dort spielt ein YouTube-Player im Zuschneiden-Bereich
+// (Steuerung über die postMessage-Schnittstelle des Players, ohne zusätzliches Skript).
+const player = {
+  id: null, frame: null, now: null,
+  send(func, args = []) { this.frame?.contentWindow.postMessage(JSON.stringify({ event: "command", func, args, id: 1, channel: "widget" }), "*"); },
+  show(id) {
+    $("#appPlayer").hidden = !id;
+    for (const el of [...$$("[data-now]"), $("#trimPreview").parentElement]) el.hidden = !id;
+    if (!id || id === this.id) return;
+    this.id = id; this.now = null;
+    $("#appPlayer").innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?enablejsapi=1&playsinline=1&origin=${encodeURIComponent(location.origin)}" allow="autoplay; encrypted-media; fullscreen"></iframe>`;
+    this.frame = $("#appPlayer iframe");
+    this.frame.onload = () => this.frame.contentWindow.postMessage(JSON.stringify({ event: "listening", id: 1, channel: "widget" }), "*");
+  },
+  seek(t) { this.send("seekTo", [t, true]); this.send("pauseVideo"); this.now = t; },
+};
+if (inApp) addEventListener("message", (e) => {
+  if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+  try { const t = JSON.parse(e.data).info?.currentTime; if (t != null) player.now = t; } catch { /* andere Nachricht */ }
+});
+
 async function videoTime() {
+  if (inApp) return player.id ? player.now : null;
   if (!sameVideoInTab()) return null;
   try {
     const [r] = await chrome.scripting.executeScript({
@@ -438,6 +464,7 @@ async function videoTime() {
 
 let seekTimer = null;
 function seekPreview(t) {
+  if (inApp) return $("#trimPreview").checked && player.id && player.seek(t);
   if (!$("#trimPreview").checked || !sameVideoInTab()) return;
   clearTimeout(seekTimer);
   seekTimer = setTimeout(() => {
@@ -651,7 +678,7 @@ async function renderJobs(jobs) {
     const acts = [];
     if (j.status === "scheduled") acts.push(`<button class="link" data-act="start">${icon("play")} Jetzt starten</button>`);
     if (["running", "queued", "scheduled"].includes(j.status)) acts.push(`<button class="link" data-act="cancel">Abbrechen</button>`);
-    if (j.status === "finished" && j.files.some((f) => f.exists)) acts.push(`<button class="link" data-act="save">${icon("download")} Auf PC${j.files.length > 1 ? ` (${j.files.length})` : ""}</button>`);
+    if (j.status === "finished" && j.files.some((f) => f.exists)) acts.push(`<button class="link" data-act="save">${icon("download")} ${DEVICE}${j.files.length > 1 ? ` (${j.files.length})` : ""}</button>`);
     if (j.status === "error" || j.status === "cancelled") acts.push(`<button class="link" data-act="retry">${icon("refresh")} Nochmal</button>`);
     if (!["running", "queued", "scheduled"].includes(j.status)) {
       acts.push(`<button class="link" data-act="remove">Entfernen</button>`);

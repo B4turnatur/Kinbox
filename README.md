@@ -94,7 +94,7 @@ Runs on your PC, no cloud, no account. Just this PC or your whole home network.
 - **Web library** (works great on phones, installable as a PWA): search, filter, play, download to the device, 📌 keep
 - **Family profiles:** "Who's watching?" with optional PIN, a folder, library, queue and clean-up rules for each person, sharing with the family, storage quotas, invite links, multiple admins
 - **Automatic clean-up** per person: after downloading to a device, after X days, or above a size limit
-- **Share from your phone** via the iOS Shortcuts app or Android's "HTTP Shortcuts"
+- **Android app:** Share → Kinbox from YouTube, TikTok & co., with every option of the extension (including trimming) – iPhone via the Shortcuts app
 
 yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of them.
 
@@ -149,6 +149,14 @@ python3 server/server.py
 
 Shortcuts: **Alt+Shift+D** popup · **Alt+Shift+Q** download the current page · **Alt+Shift+M** as MP3 (change them at `chrome://extensions/shortcuts`).
 
+## 3. Android app (optional)
+
+1. Download **`Kinbox.apk`** from the [latest release](https://github.com/B4turnatur/Kinbox/releases/latest) on your phone and open it. Android asks once whether to allow installing from this source – tap **Allow**.
+2. Connect it: long-press your **invite link** (e.g. in WhatsApp) → **Share → Kinbox**. Or open the library on your phone → profile → **Set up Android app → Connect with the app**.
+3. From now on: in YouTube, TikTok, Instagram or the browser tap **Share → Kinbox**. You get the same options as in the extension – quality, audio, trimming with a preview player, chapters, presets, queue – and "To phone" saves the file to `Downloads/Kinbox`.
+
+Only works on the home Wi-Fi. Notifications for finished downloads arrive while the app is open.
+
 ## 👨‍👩‍👧 Family & profiles
 
 <p align="center"><img src="docs/images/profiles-en.png" width="720" alt="Who's watching? profile picker"></p>
@@ -196,6 +204,7 @@ Only download content you're allowed to download, and respect the sites' terms o
 ## Development
 
 No build step. `server/server.py` is a single-file Flask app. `server/static/library.html` is the web library. `extension/` is a plain Manifest V3 extension.
+`android/` is the Android app (Kotlin, `./gradlew assembleDebug`): a WebView that shows the extension's popup and settings (`android/src/main/assets/app.js` replaces the `chrome.*` APIs), so both always have the same features.
 Translations live in `extension/lib/i18n.js`. `server/static/i18n.js` must be an identical copy. Run `node tests/test_i18n.mjs` to check both.
 
 ## License

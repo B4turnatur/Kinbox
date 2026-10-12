@@ -170,10 +170,20 @@
     "Kinbox antwortet nicht – bitte Seite neu laden": "Kinbox isn't responding – please reload the page",
     "Erst laufende Downloads abwarten, dann aktualisieren": "Wait for running downloads to finish, then update",
     "Kinbox ist schon aktuell": "Kinbox is already up to date",
+    // ---- Android-App
+    "Aufs Handy": "To phone", "Willkommen bei Kinbox": "Welcome to Kinbox",
+    "Verbinde die App einmal mit deiner Kinbox zu Hause – danach kannst du Videos aus jeder App über „Teilen“ laden.": "Connect the app to your Kinbox at home once – then you can download videos from any app via \"Share\".",
+    "Lass dir einen Einladungslink schicken – der Admin erstellt ihn in der Mediathek unter ⚙ → Familie → Einladen.": "Ask for an invite link – the admin creates it in the library under ⚙ → Family → Invite.",
+    "Tippe in WhatsApp & Co. lange auf den Link → Teilen → Kinbox.": "In WhatsApp & co., long-press the link → Share → Kinbox.",
+    "Oder kopiere den Link und tippe hier:": "Or copy the link and tap here:", "Link aus der Zwischenablage einfügen": "Paste link from clipboard",
+    "Link von Hand eingeben": "Enter link manually", "Verbinden": "Connect", "Oder Adresse und Token einzeln:": "Or address and token separately:",
+    "Funktioniert nur im WLAN zu Hause.": "Only works on the home Wi-Fi.", "Android-App einrichten": "Set up Android app",
+    "1. „Kinbox.apk“ aus dem": "1. Get \"Kinbox.apk\" from the", "neuesten Release": "latest release", "aufs Handy laden und installieren.": "onto your phone and install it.",
+    "2. Hier am Handy auf „Mit der App verbinden“ tippen.": "2. On your phone, tap \"Connect with the app\" here.", "Mit der App verbinden": "Connect with the app",
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
-    ["Lädt herunter ({0})", "Downloading ({0})"], ["Interner Fehler: {0}", "Internal error: {0}"], ["yt-dlp beendet mit Code {0}", "yt-dlp exited with code {0}"],
+    ["Aufs Handy ({0})", "To phone ({0})"], ["Lädt herunter ({0})", "Downloading ({0})"], ["Interner Fehler: {0}", "Internal error: {0}"], ["yt-dlp beendet mit Code {0}", "yt-dlp exited with code {0}"],
     ["Ungültige Zeitangabe: {0} (Format z. B. 1:23 oder 01:02:03)", "Invalid time: {0} (format e.g. 1:23 or 01:02:03)"],
     ["Ungültiger Wert für {0}", "Invalid value for {0}"], ["{0} muss zwischen {1} und {2} liegen", "{0} must be between {1} and {2}"],
     ["Dein Speicher ist voll ({0} GB). Lösche etwas in der Mediathek oder frag den Admin.", "Your storage is full ({0} GB). Delete something in the library or ask the admin."],

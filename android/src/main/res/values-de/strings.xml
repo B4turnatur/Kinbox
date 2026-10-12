@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connect_title">Mit Kinbox verbinden?</string>
+    <string name="connect_text">Server: %1$s\n\nDownloads landen dann in dieser Kinbox.</string>
+    <string name="connect_yes">Verbinden</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="connected">Verbunden ✓</string>
+    <string name="not_invite">Das ist kein Kinbox-Einladungslink.</string>
+    <string name="saving">Wird aufs Handy geladen …</string>
+    <string name="no_download">Diese Datei kann hier nicht gespeichert werden.</string>
+    <string name="channel">Downloads</string>
+    <string name="done">Download fertig ✓</string>
+    <string name="failed">Download fehlgeschlagen</string>
+</resources>

@@ -125,6 +125,14 @@ python3 server/server.py
 
 <p align="center"><img src="docs/images/extension-de.png" width="720" alt="Popup der Kinbox-Erweiterung"></p>
 
+## 3. Android-App (optional)
+
+1. **`Kinbox.apk`** aus dem [neuesten Release](https://github.com/B4turnatur/Kinbox/releases/latest) am Handy laden und öffnen. Android fragt einmal, ob Installationen aus dieser Quelle erlaubt sind → **Zulassen**.
+2. Verbinden: den **Einladungslink** (z. B. in WhatsApp) lange drücken → **Teilen → Kinbox**. Oder am Handy die Mediathek öffnen → Profil → **Android-App einrichten → Mit der App verbinden**.
+3. Ab jetzt: in YouTube, TikTok, Instagram oder im Browser **Teilen → Kinbox**. Es gibt dieselben Optionen wie in der Erweiterung – Qualität, Audio, Zuschneiden mit Vorschau-Player, Kapitel, Presets, Warteschlange – und „Aufs Handy“ speichert die Datei unter `Downloads/Kinbox`.
+
+Nur im WLAN zu Hause nutzbar. Benachrichtigungen über fertige Downloads kommen, solange die App geöffnet ist.
+
 ## 👨‍👩‍👧 Familie & Profile
 
 <p align="center"><img src="docs/images/profiles-de.png" width="720" alt="Profilauswahl „Wer schaut?“"></p>
@@ -180,7 +188,7 @@ Im Browser `http://<IP-des-Servers>:8765` öffnen (oder in der Erweiterung auf �
 - **＋ Link**: Link einfügen, Art wählen, fertig
 - Am Handy: „Zum Startbildschirm hinzufügen" – dann wirkt sie wie eine App
 
-**Direkt aus „Teilen" am Handy:** In der Mediathek unter „＋ Link" → „📱 Direkt aus der Teilen-Funktion" stehen Adresse und Anleitung für die iPhone-App „Kurzbefehle" bzw. die Android-App „HTTP Shortcuts".
+**Direkt aus „Teilen" am Handy:** Android → die Kinbox-App (siehe oben). iPhone → in der Mediathek unter „＋ Link" → „📱 Direkt aus der Teilen-Funktion" steht die Anleitung für die App „Kurzbefehle".
 
 ## 🧹 Automatisch aufräumen
 

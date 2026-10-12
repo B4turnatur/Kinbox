@@ -108,6 +108,25 @@ yt-dlp aktualisierst du in den Einstellungen der Erweiterung mit „yt-dlp aktua
 
 Umstellen geht jederzeit, indem du `install.bat` erneut startest. Autostart nachträglich: Rechtsklick auf `autostart.bat` → „Als Administrator ausführen". Den Token findest du auch in `settings.json`.
 
+### Docker / NAS (Portainer, Synology, Unraid …)
+
+Kein Windows-PC nötig – Kinbox läuft als Container, ffmpeg und deno sind schon drin (amd64 + arm64).
+In Portainer: **Stacks → Add stack**, Inhalt von [`docker-compose.yml`](docker-compose.yml) einfügen, die beiden Ordner links anpassen, **Deploy the stack**.
+
+```yaml
+services:
+  kinbox:
+    image: ghcr.io/b4turnatur/kinbox:latest
+    restart: unless-stopped
+    ports: ["8765:8765"]
+    volumes:
+      - ./kinbox-data:/data            # Einstellungen, Profile, Mediathek
+      - ./kinbox-downloads:/downloads  # deine Videos
+```
+
+Den Admin-Token findest du im Container-Log (Portainer → Containers → kinbox → Logs) und in `kinbox-data/settings.json`.
+Die Mediathek unter `http://<NAS-IP>:8765/library` funktioniert wie gewohnt – auch beide Update-Knöpfe (yt-dlp und Kinbox); Kinbox startet den Container danach selbst neu. Alternativ neueres Image ziehen (Portainer: *Recreate → Re-pull image*).
+
 ### Linux / macOS
 
 ```bash

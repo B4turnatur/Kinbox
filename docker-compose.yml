@@ -1,0 +1,12 @@
+# Kinbox für Docker / Portainer (Stacks → Add stack → hier einfügen).
+# Linke Seite der Pfade an dein NAS anpassen.
+services:
+  kinbox:
+    image: ghcr.io/b4turnatur/kinbox:latest
+    container_name: kinbox
+    restart: unless-stopped   # nötig für den Update-Knopf (Kinbox startet danach neu)
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./kinbox-data:/data          # Einstellungen, Profile, Mediathek
+      - ./kinbox-downloads:/downloads   # heruntergeladene Videos

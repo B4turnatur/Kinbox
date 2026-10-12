@@ -130,6 +130,25 @@ You can switch later by running `install.bat` again. Set up autostart afterwards
 
 > The installer scripts are in German. They only show a few short status messages.
 
+### Docker / NAS (Portainer, Synology, Unraid …)
+
+No Windows PC needed – Kinbox runs as a container with ffmpeg and deno included (amd64 + arm64).
+In Portainer: **Stacks → Add stack**, paste [`docker-compose.yml`](docker-compose.yml), adjust the two folders on the left, **Deploy**.
+
+```yaml
+services:
+  kinbox:
+    image: ghcr.io/b4turnatur/kinbox:latest
+    restart: unless-stopped
+    ports: ["8765:8765"]
+    volumes:
+      - ./kinbox-data:/data            # settings, profiles, library
+      - ./kinbox-downloads:/downloads  # your videos
+```
+
+The admin token is in the container log (Portainer → Containers → kinbox → Logs) and in `kinbox-data/settings.json`.
+The library at `http://<NAS-IP>:8765/library` works as usual – both update buttons (yt-dlp and Kinbox) too; Kinbox restarts the container by itself. Pulling a newer image (Portainer: *Recreate → Re-pull image*) also updates.
+
 ### Linux / macOS
 
 ```bash

@@ -25,13 +25,15 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.7.0"
+APP_VERSION = "3.8.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
-SETTINGS_FILE = BASE_DIR / "settings.json"
-JOBS_FILE = BASE_DIR / "jobs.json"
-LIBRARY_FILE = BASE_DIR / "library.json"
+DOCKER = bool(os.environ.get("KINBOX_DOCKER"))
+DATA_DIR = Path(os.environ.get("KINBOX_DATA") or BASE_DIR)   # Docker: Volume /data
+SETTINGS_FILE = DATA_DIR / "settings.json"
+JOBS_FILE = DATA_DIR / "jobs.json"
+LIBRARY_FILE = DATA_DIR / "library.json"
 STATIC_DIR = (Path(getattr(sys, "_MEIPASS", BASE_DIR))) / "static"
 IS_WINDOWS = os.name == "nt"
 
@@ -39,7 +41,7 @@ DEFAULT_SETTINGS = {
     "host": "0.0.0.0",
     "port": 8765,
     "token": "",                      # wird beim ersten Start erzeugt
-    "download_dir": str(Path.home() / "Downloads" / "Kinbox"),
+    "download_dir": os.environ.get("KINBOX_DOWNLOADS") or str(Path.home() / "Downloads" / "Kinbox"),
     "max_parallel": 2,
     "cookies_file": "",               # optional: Pfad zu cookies.txt (Netscape-Format)
     "ffmpeg_location": "",            # optional: Ordner mit ffmpeg.exe, falls nicht im PATH
@@ -847,7 +849,7 @@ def lib_stats(owner: str | None = None) -> dict:
 import hashlib
 import hmac
 
-USERS_FILE = BASE_DIR / "users.json"
+USERS_FILE = DATA_DIR / "users.json"
 USERS: dict[str, dict] = {}
 USERS_LOCK = threading.RLock()
 AVATARS = ["😀", "😎", "🦊", "🐼", "🐯", "🦄", "🐸", "🐙", "🦁", "🐶", "🐱", "🐻", "🚀", "⚽", "🎮", "🎧", "🌸", "👑"]
@@ -2011,6 +2013,8 @@ def _fetch_update(rel: dict) -> None:
 
 def _restart() -> None:
     time.sleep(1)  # Antwort an den Browser noch rausschicken
+    if DOCKER:  # Container startet per „restart: unless-stopped“ neu, neue server.py bleibt im Container
+        os._exit(0)
     env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1", "KB_UPDATED": "1"}
     if FROZEN:  # neue exe liegt schon an Ort und Stelle (siehe _fetch_update)
         subprocess.Popen([sys.executable], cwd=BASE_DIR, env=env, creationflags=0x00000008 | 0x00000200)

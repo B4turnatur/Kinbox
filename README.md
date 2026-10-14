@@ -87,9 +87,11 @@ Runs on your PC, no cloud, no account. Just this PC or your whole home network.
 - **Audio:** MP3, M4A, Opus, FLAC, WAV, 96–320 kbps, loudness normalization, **music mode** (clean artist/title tags, square cover)
 - **Trim** with sliders or "⏱ now" (takes the position of the video playing in your tab), **chapters**, **playlists** (`1-5,8,10-`), **subtitles**, **SponsorBlock**
 - **Convert** to GIF or shrink to 8 MB (Discord), 15 MB (WhatsApp), 25 MB (email) …
+- **Video + MP3 in one go** (preset or switch "Also save as audio file") – e.g. the MP4 for OBS and the MP3 for Voicemod
+- **Edit later in the library:** open a file → ✂ *Edit* → trim (with "Now" from the player), save as audio / change format, convert to MP4, GIF, shrink, remove sound, rotate, normalize volume. The result appears as a new file; the original stays unless you turn off "Keep the original".
 - **Folder layouts:** flat, by channel, **Plex/Jellyfin** (channel › season year › episode) or music (artist › title)
-- **Download at night** (scheduled window), duplicate warning, 9 built-in presets plus your own
-- **One-click buttons** on YouTube, TikTok, Instagram, X and Reddit, right-click menu, keyboard shortcuts, notifications with "Save to this PC"
+- **Download at night** (scheduled window), duplicate warning, 10 built-in presets plus your own
+- **One-click buttons** on YouTube, TikTok, Instagram, X and Reddit, right-click menu, keyboard shortcuts, notifications with "Save to this PC". The floating button can be moved to any corner of the video or hidden per site (button menu ▾ or *Settings → Behavior*)
 - **Your look**: four styles (Classic, Clean, Paper, Terminal) and eight accent colors with clean line icons – in the extension under *Settings → Appearance*, in the library per profile under *your profile → Appearance*
 - **Web library** (works great on phones, installable as a PWA): search, filter, play, download to the device, 📌 keep
 - **Family profiles:** "Who's watching?" with optional PIN, a folder, library, queue and clean-up rules for each person, sharing with the family, storage quotas, invite links, multiple admins
@@ -213,7 +215,8 @@ This file is created on first start. Restart the server after editing it.
 - **YouTube downloads suddenly fail:** Settings → "Update yt-dlp".
 - **Windows Defender reports `Kinbox.exe` as a trojan (e.g. `Bearfoos!ml`):** a false positive of the AI heuristic – unsigned tools that download programs and start with Windows look suspicious to it. Versions before 3.5.1 triggered it more often (hidden PowerShell); please update. You can report the file to Microsoft as a false positive: [microsoft.com/wdsi/filesubmission](https://www.microsoft.com/wdsi/filesubmission). The source code is all in `server/server.py`.
 - **"Sign in to confirm you're not a bot" / Instagram "login required":** set up cookies (see above).
-- **No "Kinbox" button on TikTok etc.:** reload the page. The right-click menu and the popup always work.
+- **No "Kinbox" button on TikTok etc.:** reload the page and check *Settings → Behavior → Show on*. The right-click menu and the popup always work.
+- **The floating button covers something:** button menu ▾ → "Move button to another corner" or "Hide on this site".
 - **A video won't play in the library:** the browser can't play that format (e.g. MKV/H.265). Download it to the device instead, or choose MP4.
 - **Error details:** queue → "Log" on the job.
 

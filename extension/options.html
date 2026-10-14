@@ -106,6 +106,19 @@
   <h2>3. Verhalten</h2>
   <label class="switch"><input type="checkbox" id="showYoutubeButton"><span></span>„Kinbox"-Button unter YouTube-Videos anzeigen</label>
   <label class="switch"><input type="checkbox" id="showSocialButtons"><span></span>„Kinbox"-Button über Videos auf TikTok, Instagram, X und Reddit</label>
+  <div class="grid2" id="socialBox" style="margin:2px 0 8px 46px">
+    <label class="field">Position über dem Video
+      <select id="socialPos"><option value="tl">Oben links</option><option value="tr">Oben rechts</option><option value="bl">Unten links</option><option value="br">Unten rechts</option></select>
+    </label>
+    <div class="field">Anzeigen auf
+      <div style="display:flex;gap:10px;flex-wrap:wrap" id="socialSites">
+        <label class="switch small"><input type="checkbox" value="tiktok"><span></span>TikTok</label>
+        <label class="switch small"><input type="checkbox" value="instagram"><span></span>Instagram</label>
+        <label class="switch small"><input type="checkbox" value="x"><span></span>X</label>
+        <label class="switch small"><input type="checkbox" value="reddit"><span></span>Reddit</label>
+      </div>
+    </div>
+  </div>
   <label class="switch"><input type="checkbox" id="notify"><span></span>Benachrichtigung, wenn ein Download fertig ist</label>
   <p style="margin-top:12px">Tastenkürzel: <b>Alt+Shift+D</b> Popup · <b>Alt+Shift+Q</b> sofort laden · <b>Alt+Shift+M</b> als MP3.
     <a href="#" id="shortcuts">Ändern</a></p>

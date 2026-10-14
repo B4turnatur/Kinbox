@@ -81,6 +81,10 @@ dialog::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(3px); }
 .dlg-body h2 { font-size: 17px; margin: 0 0 4px; }
 .dlg-body .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; word-break: break-word; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.editbox { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.editbox[hidden], .editbox [hidden] { display: none !important; }
+#eGo { justify-content: center; }
+.editbox label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 13px; }
 .close { position: sticky; top: 8px; float: right; margin: 8px 8px -44px 0; z-index: 2; background: rgba(0,0,0,.6); color: #fff; border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 18px; }
 
 .form { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
@@ -251,7 +255,41 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
       <button class="btn" id="pShare"></button>
       <button class="btn" id="pPin"></button>
       <a class="btn" id="pSource" target="_blank" rel="noopener"><svg class="i"><use href="/static/icons.svg#external"/></svg> Original</a>
+      <button class="btn" id="pEdit"><svg class="i"><use href="/static/icons.svg#scissors"/></svg> Bearbeiten</button>
       <button class="btn danger" id="pDelete">Löschen</button>
+    </div>
+    <div class="editbox" id="editBox" hidden>
+      <div class="chips" id="editOps">
+        <button class="chip" data-op="cut" data-k="video audio">Zuschneiden</button>
+        <button class="chip" data-op="audio" data-k="video audio" id="eAudioOp">Als Audio speichern</button>
+        <button class="chip" data-op="mp4" data-k="video">In MP4 umwandeln</button>
+        <button class="chip" data-op="gif" data-k="video">GIF</button>
+        <button class="chip" data-op="small" data-k="video">Verkleinern</button>
+        <button class="chip" data-op="mute" data-k="video">Ton entfernen</button>
+        <button class="chip" data-op="rotate" data-k="video">Drehen</button>
+        <button class="chip" data-op="loudnorm" data-k="video audio">Lautstärke angleichen</button>
+      </div>
+      <div class="row" data-ep="cut">
+        <label>Start <span class="copy"><input id="eStart" placeholder="0:00"><button type="button" class="btn" data-now="eStart">Jetzt</button></span></label>
+        <label>Ende <span class="copy"><input id="eEnd" placeholder="1:30"><button type="button" class="btn" data-now="eEnd">Jetzt</button></span></label>
+      </div>
+      <div class="row" data-ep="audio">
+        <label>Format <select id="eFormat"><option value="mp3">MP3</option><option value="m4a">M4A</option><option value="opus">Opus</option><option value="flac">FLAC</option><option value="wav">WAV</option></select></label>
+        <label>Bitrate <select id="eBitrate"><option>320</option><option>256</option><option>192</option><option>128</option></select></label>
+      </div>
+      <div class="row" data-ep="gif">
+        <label>Bilder pro Sekunde <select id="eFps"><option>8</option><option selected>12</option><option>15</option><option>20</option><option>25</option></select></label>
+        <label>Breite <select id="eWidth"><option value="320">320 px</option><option value="480" selected>480 px</option><option value="640">640 px</option><option value="800">800 px</option></select></label>
+      </div>
+      <div class="row" data-ep="small">
+        <label>Zielgröße <select id="eMB"><option value="8">8 MB · Discord</option><option value="15" selected>15 MB · WhatsApp</option><option value="25">25 MB · E-Mail</option><option value="50">50 MB</option><option value="100">100 MB</option></select></label>
+      </div>
+      <div class="row" data-ep="rotate">
+        <label>Richtung <select id="eAngle"><option value="90">90° nach rechts</option><option value="180">180°</option><option value="270">90° nach links</option></select></label>
+      </div>
+      <div class="hint" id="eHint"></div>
+      <label class="switch"><input type="checkbox" id="eKeep" checked><span></span>Original behalten</label>
+      <button class="btn primary" id="eGo">Starten</button>
     </div>
   </div>
 </dialog>
@@ -272,6 +310,7 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
         <option value="podcast">Podcast (ohne Sponsoren)</option>
         <option value="whatsapp">WhatsApp-tauglich (≤ 15 MB)</option>
         <option value="gif">GIF</option>
+        <option value="both">Video + MP3 (beides)</option>
       </select>
     </label>
     <label class="switch"><input type="checkbox" id="addNight"><span></span>Erst nachts laden</label>
@@ -550,6 +589,8 @@ function openPlayer(e) {
   drawPin();
   $("#pDelete").hidden = !canEdit;
   $("#pDelete").textContent = "Löschen"; delete $("#pDelete").dataset.sure;
+  $("#pEdit").hidden = !canEdit || !["video", "audio"].includes(e.kind);
+  $("#editBox").hidden = true; $("#eStart").value = $("#eEnd").value = "";
   $("#playerDlg").showModal();
 }
 function drawShare() { $("#pShare").innerHTML = ic(current.shared ? "check" : "users") + " " + (current.shared ? "Geteilt" : "Mit Familie teilen"); }
@@ -575,6 +616,42 @@ $("#pDelete").addEventListener("click", async () => {
   try { await api(`/api/library/${current.id}`, { method: "DELETE" }); closePlayer(); toast("Gelöscht"); load(); } catch (e) { toast(e.message, true); }
 });
 $("#pDownload").addEventListener("click", () => setTimeout(load, 70000));
+
+// ---- Nachträglich bearbeiten (läuft als Auftrag auf dem Server) ----------
+let eOp = "cut";
+const EDIT_HINT = {
+  cut: "Tipp: abspielen und an der richtigen Stelle auf „Jetzt“ tippen.",
+  audio: "Speichert nur den Ton – z. B. als MP3 für Voicemod, OBS oder Soundboards.",
+  mp4: "MP4 (H.264) spielt überall – OBS, Handy, Fernseher.",
+  gif: "GIFs gehen bis 90 Sekunden – vorher zuschneiden.",
+  small: "Für WhatsApp, Discord oder E-Mail.",
+  loudnorm: "Macht zu leise oder zu laute Dateien gleichmäßig laut.",
+};
+function drawEdit() {
+  const ok = (c) => c.dataset.k.split(" ").includes(current.kind);
+  if (!ok($(`#editOps [data-op="${eOp}"]`))) eOp = "cut";
+  $$("#editOps .chip").forEach((c) => { c.hidden = !ok(c); c.classList.toggle("active", c.dataset.op === eOp); });
+  $("#eAudioOp").textContent = current.kind === "audio" ? "Format ändern" : "Als Audio speichern";
+  $$("#editBox [data-ep]").forEach((p) => p.hidden = p.dataset.ep !== eOp);
+  $("#eHint").textContent = EDIT_HINT[eOp] || "";
+}
+$("#pEdit").addEventListener("click", () => {
+  const b = $("#editBox"); b.hidden = !b.hidden;
+  if (!b.hidden) { drawEdit(); b.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
+});
+$("#editOps").addEventListener("click", (e) => { const c = e.target.closest("[data-op]"); if (c) { eOp = c.dataset.op; drawEdit(); } });
+$("#editBox").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-now]"), m = $("#media video, #media audio");
+  if (b && m) { const s = m.currentTime; $("#" + b.dataset.now).value = Math.floor(s / 60) + ":" + (s % 60).toFixed(1).padStart(4, "0"); }
+});
+$("#eGo").addEventListener("click", async () => {
+  const body = { op: eOp, keep: $("#eKeep").checked, start: $("#eStart").value.trim(), end: $("#eEnd").value.trim(),
+    format: $("#eFormat").value, bitrate: $("#eBitrate").value, gifFps: +$("#eFps").value, gifWidth: +$("#eWidth").value,
+    targetMB: +$("#eMB").value, angle: $("#eAngle").value };
+  try { await api(`/api/library/${current.id}/edit`, { method: "POST", body: JSON.stringify(body) });
+    closePlayer(); toast("Wird bearbeitet – erscheint gleich in der Mediathek"); pollJobs();
+  } catch (err) { toast(err.message, true); }
+});
 
 // ---- Link hinzufügen ----------------------------------------------------
 const shortcut = () => `${location.origin}/api/add?token=${token}&preset=${$("#addPreset").value}&url=[LINK]`;

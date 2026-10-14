@@ -44,6 +44,8 @@
   box-shadow: 0 12px 36px rgba(0, 0, 0, .5);
 }
 #kinbox-float .kinbox-f-menu[hidden] { display: none; }
+#kinbox-float.kb-up .kinbox-f-menu { top: auto; bottom: 38px; }
+#kinbox-float.kb-right .kinbox-f-menu { left: auto; right: 0; }
 #kinbox-float .kinbox-f-menu button {
   width: 100%;
   padding: 0 12px;

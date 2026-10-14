@@ -26,6 +26,7 @@ export const DEFAULT_OPTIONS = {
   saveToPc: false,
   musicTags: false,         // Interpret/Titel sauber + quadratisches Cover
   organize: "flat",         // flat | channel | plex | music
+  alsoAudio: false,         // Video-Modus: zusätzlich Audiodatei (audioFormat) daneben legen
   convert: { type: "none", gifFps: 12, gifWidth: 480, targetMB: 15, keepOriginal: false },
   when: "now",              // now | night
 };
@@ -34,6 +35,7 @@ export const BUILTIN_PRESETS = [
   { id: "best", name: "Beste Qualität", icon: "★", options: { mode: "video", quality: "best", container: "mp4", vcodec: "any" } },
   { id: "1080", name: "1080p MP4 (überall abspielbar)", icon: "▶", options: { mode: "video", quality: "1080", container: "mp4", vcodec: "h264" } },
   { id: "720", name: "720p klein", icon: "▶", options: { mode: "video", quality: "720", container: "mp4", vcodec: "h264" } },
+  { id: "both", name: "Video + MP3 (beides)", icon: "▶", options: { mode: "video", quality: "best", container: "mp4", vcodec: "h264", alsoAudio: true, audioFormat: "mp3", audioBitrate: "320" } },
   { id: "mp3", name: "MP3 320 kbps", icon: "♪", options: { mode: "audio", audioFormat: "mp3", audioBitrate: "320" } },
   { id: "music", name: "Musik mit Tags & Cover", icon: "♫", options: { mode: "audio", audioFormat: "mp3", audioBitrate: "320", musicTags: true } },
   { id: "flac", name: "Musik verlustfrei (FLAC)", icon: "♫", options: { mode: "audio", audioFormat: "flac" } },
@@ -53,6 +55,8 @@ export const DEFAULT_SETTINGS = {
   token: "",
   showYoutubeButton: true,
   showSocialButtons: true,
+  socialPos: "tl",      // Ecke des schwebenden Knopfs: tl | tr | bl | br
+  socialOff: [],        // Seiten ohne Knopf: tiktok | instagram | x | reddit
   notify: true,
   style: "classic",     // classic | clean | paper | mono
   accent: "#7c5cff",

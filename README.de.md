@@ -187,12 +187,14 @@ Jede Person hat ihren **eigenen Bereich**: eigener Ordner, eigene Mediathek, eig
 | **Untertitel** | Sprachen wählen, automatische Untertitel, einbetten oder als .srt |
 | **SponsorBlock** | Sponsoren, Intros, Abo-Aufrufe … herausschneiden oder als Kapitel markieren |
 | **Umwandeln** | Als **GIF** oder **verkleinern** auf 8 MB (Discord), 15 MB (WhatsApp), 25 MB (E-Mail) … |
+| **Video + MP3** | Beides mit einem Download (Preset oder Schalter „Zusätzlich als Audio-Datei“) – z. B. MP4 für OBS und MP3 für Voicemod |
+| **Nachträglich bearbeiten** | In der Mediathek Datei öffnen → ✂ *Bearbeiten*: zuschneiden (mit „Jetzt“ aus dem Player), als Audio speichern / Format ändern, in MP4 umwandeln, GIF, verkleinern, Ton entfernen, drehen, Lautstärke angleichen. Das Ergebnis kommt als neue Datei dazu, das Original bleibt (außer „Original behalten“ ist aus). |
 | **Musik-Modus** | Interpret und Titel werden sauber aus „Interpret – Titel" gelesen, Cover quadratisch zugeschnitten |
 | **Ordnerstruktur** | Alles in einen Ordner, nach Kanal, **Plex/Jellyfin** (Kanal › Season Jahr › Folge) oder Musik (Interpret › Titel) |
 | **Nachts laden** | 🌙-Schalter: Download startet erst im Nachtfenster (Standard 01:00–07:00) |
 | **Doppelt-Warnung** | Das Popup zeigt „Schon in der Kinbox", wenn das Video schon geladen wurde |
-| **Presets** | 9 eingebaute (u. a. WhatsApp, GIF, Musik mit Tags) + beliebig viele eigene |
-| **Schnellzugriff** | „Kinbox"-Button unter YouTube-Videos, schwebender Button auf TikTok, Instagram, X und Reddit, Rechtsklick, Tastenkürzel |
+| **Presets** | 10 eingebaute (u. a. WhatsApp, GIF, Video + MP3, Musik mit Tags) + beliebig viele eigene |
+| **Schnellzugriff** | „Kinbox"-Button unter YouTube-Videos, schwebender Button auf TikTok, Instagram, X und Reddit (Ecke wählbar, pro Seite abschaltbar: Menü ▾ am Knopf oder *Einstellungen → Verhalten*), Rechtsklick, Tastenkürzel |
 | **Benachrichtigung** | wenn fertig – mit Knopf „Auf diesen PC speichern" |
 | **Aussehen** | vier Stile (Klassisch, Schlicht, Papier, Terminal) und acht Farben, schlichte Linien-Icons – Erweiterung: *Einstellungen → Aussehen*, Mediathek (pro Profil): *dein Profil → Aussehen* |
 
@@ -246,7 +248,8 @@ Wird beim ersten Start angelegt. Nach Änderungen den Server neu starten.
 - **YouTube-Downloads scheitern plötzlich** – Einstellungen → „yt-dlp aktualisieren".
 - **Windows Defender meldet `Kinbox.exe` als Trojaner (z. B. `Bearfoos!ml`)** – Fehlalarm der KI-Erkennung: Unsignierte Programme, die andere Programme herunterladen und mit Windows starten, wirken auf sie verdächtig. Versionen vor 3.5.1 lösten das häufiger aus (unsichtbares PowerShell); bitte aktualisieren. Die Datei kannst du bei Microsoft als Fehlalarm melden: [microsoft.com/wdsi/filesubmission](https://www.microsoft.com/wdsi/filesubmission). Der komplette Quellcode steht in `server/server.py`.
 - **„Sign in to confirm you're not a bot" / Instagram „login required"** – Cookies einrichten (siehe oben).
-- **Kein „Kinbox"-Button auf TikTok & Co.** – Seite neu laden. Rechtsklick → „Mit Kinbox herunterladen" und das Popup funktionieren immer.
+- **Kein „Kinbox"-Button auf TikTok & Co.** – Seite neu laden und *Einstellungen → Verhalten → Anzeigen auf* prüfen. Rechtsklick → „Mit Kinbox herunterladen" und das Popup funktionieren immer.
+- **Der schwebende Knopf verdeckt etwas** – Menü ▾ am Knopf → „Knopf in andere Ecke“ oder „Auf dieser Seite ausblenden“.
 - **Video spielt in der Mediathek nicht** – Format (z. B. MKV/H.265) kann der Browser nicht; „Auf dieses Gerät" laden oder MP4 wählen.
 - **Fehlerdetails** – in der Warteschlange beim Auftrag auf „Log" klicken.
 

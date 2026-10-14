@@ -129,10 +129,14 @@
   chrome.storage.onChanged.addListener((c, area) => {
     if (area === "sync" && (c.style || c.accent)) chrome.storage.sync.get({ style: "classic", accent: "#7c5cff" }, look);
   });
-  chrome.storage.sync.get({ showYoutubeButton: true, showSocialButtons: true }, (s) => { enabled = s.showSocialButtons; });
-  chrome.storage.onChanged.addListener((c, area) => {
-    if (area === "sync" && c.showSocialButtons) { enabled = c.showSocialButtons.newValue; if (!enabled) hide(true); }
-  });
+  // An/aus (gesamt + pro Seite) und Ecke über dem Video – Einstellungen → Verhalten oder Menü ▾
+  let pos = "tl";
+  const prefs = (s) => {
+    enabled = s.showSocialButtons && !s.socialOff.includes(SITE);
+    pos = /^[tb][lr]$/.test(s.socialPos) ? s.socialPos : "tl";
+    if (!enabled) hide(true); else if (!root.hidden) place();
+  };
+  const PREFS = { showSocialButtons: true, socialOff: [], socialPos: "tl" };
 
   const root = document.createElement("div");
   root.id = "kinbox-float";
@@ -148,12 +152,22 @@
 
   let target = null, hideTimer = null, menuOpen = false;
 
+  chrome.storage.sync.get(PREFS, prefs);
+  chrome.storage.onChanged.addListener((c, area) => {
+    if (area === "sync" && (c.showSocialButtons || c.socialOff || c.socialPos)) chrome.storage.sync.get(PREFS, prefs);
+  });
+
   function place() {
     if (!target || !target.isConnected) return hide(true);
     const r = mediaRect(target);
     if (!r || r.bottom < 0 || r.top > innerHeight) return hide(true);
-    root.style.top = Math.max(8, r.top + 10) + "px";
-    root.style.left = Math.max(8, Math.min(innerWidth - 150, r.left + 10)) + "px";
+    const w = root.offsetWidth || 130, h = 32;
+    const top = pos[0] === "t" ? r.top + 10 : r.bottom - h - 10;
+    const left = pos[1] === "l" ? r.left + 10 : r.right - w - 10;
+    root.style.top = Math.max(8, Math.min(innerHeight - h - 8, top)) + "px";
+    root.style.left = Math.max(8, Math.min(innerWidth - w - 8, left)) + "px";
+    root.classList.toggle("kb-up", pos[0] === "b");      // Menü öffnet dann nach oben
+    root.classList.toggle("kb-right", pos[1] === "r");
   }
   function show(v) {
     if (!enabled) return;
@@ -207,6 +221,15 @@
       if (!url) return flash("Adresse nicht gefunden", true);
       chrome.runtime.sendMessage({ type: "openCustom", url });
     }, "kinbox-f-accent");
+    add("swap", "Knopf in andere Ecke", () => {
+      const next = { tl: "tr", tr: "br", br: "bl", bl: "tl" }[pos];
+      pos = next; place();
+      chrome.storage.sync.set({ socialPos: next });
+    });
+    add("ban", "Auf dieser Seite ausblenden", async () => {
+      const { socialOff } = await chrome.storage.sync.get({ socialOff: [] });
+      chrome.storage.sync.set({ socialOff: [...new Set([...socialOff, SITE])] });
+    });
     menu.hidden = false;
     menuOpen = true;
   }

@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.9.0"
+APP_VERSION = "3.10.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -584,6 +584,8 @@ def run_job(job: Job):
 
 
 def _run_job(job: Job):
+    if job.options.get("edit"):
+        return run_edit(job)
     root = user_root(USERS.get(job.owner) or admin_user())
     job_dir = root / job.subfolder if job.subfolder else root
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -660,6 +662,15 @@ def _run_job(job: Job):
             if not job.files:
                 job.status, job.stage, job.error = "error", "Fehler", "Kein Vorschaubild gefunden"
                 return
+        audio_err = ""
+        if job.options.get("alsoAudio") and job.options.get("mode") == "video":
+            try:
+                also_audio(job)
+            except OptionError as e:
+                if job.cancel_requested:
+                    job.status, job.stage = "cancelled", "Abgebrochen"
+                    return
+                audio_err = f"Audio-Datei: {e}"      # Video ist trotzdem fertig
         conv = (job.options.get("convert") or {}).get("type", "none")
         if conv in ("gif", "small"):
             try:
@@ -674,6 +685,8 @@ def _run_job(job: Job):
         for f in job.files:
             if Path(f).exists():
                 lib_add(f, job.file_meta.get(f) or job.meta, job)
+        if audio_err:
+            job.status, job.error = "error", audio_err
     else:
         job.status, job.stage = "error", "Fehler"
         job.error = last_error or f"yt-dlp beendet mit Code {rc}"
@@ -1152,6 +1165,47 @@ def unique_path(p: Path) -> Path:
     return p.with_name(f"{p.stem} {uuid.uuid4().hex[:6]}{p.suffix}")
 
 
+def convert_one(job: "Job", src: Path, kind: str, conv: dict, out_dir: Path) -> Path:
+    """GIF oder „klein“ aus einem Video – für Download-Umwandlung und Mediathek-Bearbeitung."""
+    f = str(src)
+    info = probe(f)
+    dur = info["duration"]
+    if kind == "gif":
+        if dur > 90:
+            raise OptionError(f"Für ein GIF ist das Video zu lang ({int(dur)} s). Bitte vorher auf max. 90 s zuschneiden.")
+        fps, width = int(conv.get("gifFps", 12)), int(conv.get("gifWidth", 480))
+        out = unique_path(out_dir / (src.stem + ".gif"))
+        vf = (f"fps={fps},scale={width}:-2:flags=lanczos,split[a][b];"
+              f"[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5")
+        run_ffmpeg(job, ["-i", f, "-vf", vf, "-loop", "0", str(out)], dur, "GIF erstellen", 0, 100)
+        return out
+    target = float(conv.get("targetMB", 16))
+    if not dur:
+        raise OptionError("Videolänge unbekannt – Verkleinern nicht möglich")
+    total_k = target * 8000 * 0.92 / dur            # verfügbare kbit/s insgesamt
+    audio_k = (96 if total_k > 400 else 64) if info["audio"] else 0
+    video_k = int(total_k - audio_k)
+    if video_k < 90:
+        mins = target * 8000 * 0.92 / (90 + audio_k) / 60
+        raise OptionError(f"Zu lang für {target:g} MB – bei dieser Größe gehen etwa {mins:.1f} Minuten. Bitte zuschneiden.")
+    h = 480 if video_k < 600 else 720 if video_k < 1800 else 1080
+    out = unique_path(out_dir / f"{src.stem} (klein).mp4")
+    tmp = download_root() / ".tmp" / job.id / "pass"
+    tmp.mkdir(parents=True, exist_ok=True)
+    log = str(tmp / "pass")
+    vf = f"scale=-2:'min(ih,{h})'"
+    common = ["-i", f, "-vf", vf, "-c:v", "libx264", "-preset", "medium", "-b:v", f"{video_k}k",
+              "-maxrate", f"{int(video_k * 1.4)}k", "-bufsize", f"{video_k * 2}k", "-passlogfile", log]
+    try:
+        run_ffmpeg(job, common + ["-pass", "1", "-an", "-f", "null", os.devnull], dur, "Verkleinern (1/2)", 0, 45)
+        audio = ["-c:a", "aac", "-b:a", f"{audio_k}k"] if audio_k else ["-an"]
+        run_ffmpeg(job, common + ["-pass", "2"] + audio + ["-movflags", "+faststart", str(out)],
+                   dur, "Verkleinern (2/2)", 45, 100)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return out
+
+
 def convert_job_files(job: "Job", kind: str, final_dir: Path):
     conv = job.options.get("convert") or {}
     new_files = []
@@ -1160,41 +1214,7 @@ def convert_job_files(job: "Job", kind: str, final_dir: Path):
         if not src.exists() or kind_of(f) != "video":
             new_files.append(f)
             continue
-        info = probe(f)
-        dur = info["duration"]
-        if kind == "gif":
-            if dur > 90:
-                raise OptionError(f"Für ein GIF ist das Video zu lang ({int(dur)} s). Bitte vorher auf max. 90 s zuschneiden.")
-            fps, width = int(conv.get("gifFps", 12)), int(conv.get("gifWidth", 480))
-            out = unique_path(final_dir / (src.stem + ".gif"))
-            vf = (f"fps={fps},scale={width}:-2:flags=lanczos,split[a][b];"
-                  f"[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5")
-            run_ffmpeg(job, ["-i", str(src), "-vf", vf, "-loop", "0", str(out)], dur, "GIF erstellen", 0, 100)
-        else:
-            target = float(conv.get("targetMB", 16))
-            if not dur:
-                raise OptionError("Videolänge unbekannt – Verkleinern nicht möglich")
-            total_k = target * 8000 * 0.92 / dur            # verfügbare kbit/s insgesamt
-            audio_k = (96 if total_k > 400 else 64) if info["audio"] else 0
-            video_k = int(total_k - audio_k)
-            if video_k < 90:
-                mins = target * 8000 * 0.92 / (90 + audio_k) / 60
-                raise OptionError(f"Zu lang für {target:g} MB – bei dieser Größe gehen etwa {mins:.1f} Minuten. Bitte zuschneiden.")
-            h = 480 if video_k < 600 else 720 if video_k < 1800 else 1080
-            out = unique_path(final_dir / f"{src.stem} (klein).mp4")
-            tmp = download_root() / ".tmp" / job.id / "pass"
-            tmp.mkdir(parents=True, exist_ok=True)
-            log = str(tmp / "pass")
-            vf = f"scale=-2:'min(ih,{h})'"
-            common = ["-i", str(src), "-vf", vf, "-c:v", "libx264", "-preset", "medium", "-b:v", f"{video_k}k",
-                      "-maxrate", f"{int(video_k * 1.4)}k", "-bufsize", f"{video_k * 2}k", "-passlogfile", log]
-            try:
-                run_ffmpeg(job, common + ["-pass", "1", "-an", "-f", "null", os.devnull], dur, "Verkleinern (1/2)", 0, 45)
-                audio = ["-c:a", "aac", "-b:a", f"{audio_k}k"] if audio_k else ["-an"]
-                run_ffmpeg(job, common + ["-pass", "2"] + audio + ["-movflags", "+faststart", str(out)],
-                           dur, "Verkleinern (2/2)", 45, 100)
-            finally:
-                shutil.rmtree(tmp, ignore_errors=True)
+        out = convert_one(job, src, kind, conv, final_dir)
         job.file_meta[str(out)] = job.file_meta.get(f) or dict(job.meta)
         new_files.append(str(out))
         if conv.get("keepOriginal"):
@@ -1214,6 +1234,170 @@ def convert_job_files(job: "Job", kind: str, final_dir: Path):
 
 
 # --------------------------------------------------------------------------- #
+# Nachträglich bearbeiten (Mediathek) und „Video + Audio“ beim Download
+# --------------------------------------------------------------------------- #
+
+AUDIO_ENC = {"mp3": ["-c:a", "libmp3lame"], "m4a": ["-c:a", "aac"], "opus": ["-c:a", "libopus"],
+             "flac": ["-c:a", "flac"], "wav": ["-c:a", "pcm_s16le"]}
+VENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-sn"]
+ROTATE = {"90": "transpose=1", "180": "hflip,vflip", "270": "transpose=2"}
+# Bearbeitung → erlaubte Dateiarten
+EDIT_OPS = {"cut": ("video", "audio"), "audio": ("video", "audio"), "loudnorm": ("video", "audio"),
+            "gif": ("video",), "small": ("video",), "mp4": ("video",), "mute": ("video",), "rotate": ("video",)}
+
+
+def audio_enc(fmt: str, bitrate) -> list[str]:
+    br = str(bitrate or "320")
+    br = int(br) if br.isdigit() and 32 <= int(br) <= 512 else 320
+    return AUDIO_ENC[fmt] + (["-b:a", f"{br}k"] if fmt in ("mp3", "m4a", "opus") else [])
+
+
+def fmt_time(sec: float) -> str:
+    m, s = divmod(int(sec), 60)
+    return f"{m // 60}:{m % 60:02d}:{s:02d}" if m >= 60 else f"{m}:{s:02d}"
+
+
+def edit_check(kind: str, body: dict) -> dict:
+    """Prüft eine Bearbeitung und gibt nur erlaubte Felder zurück."""
+    op = body.get("op")
+    if op not in EDIT_OPS:
+        raise OptionError("Unbekannte Bearbeitung")
+    if kind not in EDIT_OPS[op]:
+        raise OptionError("Das geht mit dieser Datei nicht")
+    ed = {"op": op, "keep": body.get("keep", True) is not False}
+    if op == "cut":
+        start, end = str(body.get("start") or "").strip(), str(body.get("end") or "").strip()
+        if not start and not end:
+            raise OptionError("Bitte Start oder Ende angeben")
+        for t in (start, end):
+            if t and not TIME_RE.match(t):
+                raise OptionError(f"Ungültige Zeitangabe: {t} (Format z. B. 1:23 oder 01:02:03)")
+        if start and end and to_seconds(end) <= to_seconds(start):
+            raise OptionError("Das Ende muss nach dem Start liegen")
+        ed.update(start=start, end=end)
+    elif op == "audio":
+        if body.get("format", "mp3") not in AUDIO_ENC:
+            raise OptionError("Unbekanntes Audioformat")
+        ed.update(format=body.get("format", "mp3"), bitrate=str(body.get("bitrate") or "320"))
+    elif op == "rotate":
+        if str(body.get("angle")) not in ROTATE:
+            raise OptionError("Ungültiger Winkel")
+        ed["angle"] = str(body["angle"])
+    elif op in ("gif", "small"):
+        for key, lo, hi, dflt in (("gifFps", 5, 30, 12), ("gifWidth", 120, 1280, 480), ("targetMB", 1, 4000, 15)):
+            try:
+                v = float(body.get(key, dflt))
+            except (TypeError, ValueError):
+                raise OptionError(f"Ungültiger Wert für {key}")
+            if not lo <= v <= hi:
+                raise OptionError(f"{key} muss zwischen {lo} und {hi} liegen")
+            ed[key] = v
+    return ed
+
+
+def edit_label(ed: dict) -> str:
+    op = ed["op"]
+    if op == "cut":
+        return f"{fmt_time(to_seconds(ed['start'] or '0'))}–{fmt_time(to_seconds(ed['end'])) if ed['end'] else 'Ende'}"
+    return {"audio": ed.get("format", "").upper(), "gif": "GIF", "small": f"{ed.get('targetMB', 15):g} MB", "mp4": "MP4",
+            "mute": "ohne Ton", "rotate": f"{ed.get('angle')}°", "loudnorm": "normalisiert"}[op]
+
+
+def edit_file(job: "Job", src: Path, kind: str, ed: dict, out_dir: Path) -> Path:
+    """Eine Bearbeitung mit ffmpeg ausführen; Ergebnis landet in out_dir."""
+    op = ed["op"]
+    if op in ("gif", "small"):
+        return convert_one(job, src, op, ed, out_dir)
+    f = str(src)
+    info = probe(f)
+    dur = info["duration"]
+    if op in ("audio", "loudnorm") and not info["audio"]:
+        raise OptionError("Diese Datei hat keinen Ton")
+    ext = src.suffix
+    if op == "cut":
+        a = to_seconds(ed["start"] or "0")
+        cut = ["-ss", f"{a:g}"] + (["-to", f"{to_seconds(ed['end']):g}"] if ed["end"] else [])
+        dur = (to_seconds(ed["end"]) if ed["end"] else dur) - a
+        if kind == "video":
+            args, ext = cut + ["-i", f] + VENC, ".mp4"   # neu kodieren = auf das Bild genau
+        else:
+            args = cut + ["-i", f, "-map", "0", "-c", "copy"]
+    elif op == "audio":
+        args, ext = ["-i", f, "-map", "0:a:0", "-vn", "-sn"] + audio_enc(ed["format"], ed.get("bitrate")), "." + ed["format"]
+    elif op == "mp4":
+        args, ext = ["-i", f] + VENC, ".mp4"
+    elif op == "mute":
+        args = ["-i", f, "-map", "0:v:0", "-c", "copy", "-an", "-sn"]
+    elif op == "rotate":
+        args, ext = ["-i", f, "-vf", ROTATE[ed["angle"]]] + VENC, ".mp4"
+    else:  # loudnorm – ohne -ar würde loudnorm auf 192 kHz hochrechnen
+        af = ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000"]
+        if kind == "video":
+            args, ext = ["-i", f, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy"] + af + \
+                        ["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"], ".mp4"
+        else:
+            fmt = ext.lower().lstrip(".")
+            fmt = fmt if fmt in AUDIO_ENC else "mp3"
+            args, ext = ["-i", f, "-map", "0:a:0"] + af + audio_enc(fmt, 320), "." + fmt
+    name = re.sub(r'[<>:"/\\|?*]', ".", edit_label(ed))
+    out = unique_path(out_dir / f"{src.stem} ({name}){ext}")
+    run_ffmpeg(job, args + [str(out)], dur, "Bearbeitet", 0, 100)
+    return out
+
+
+def run_edit(job: "Job"):
+    body = job.options.get("edit") or {}
+    with LIB_LOCK:
+        e = LIB.get(body.get("eid") or "")
+    if not e or e.get("owner") != job.owner or not Path(e["path"]).exists():
+        job.status, job.stage, job.error = "error", "Fehler", "Die Datei gibt es nicht mehr"
+        return
+    src = Path(e["path"])
+    work = download_root() / ".tmp" / job.id / "edit"
+    work.mkdir(parents=True, exist_ok=True)
+    try:
+        ed = edit_check(e.get("kind", ""), body)     # auch bei „Wiederholen“ erneut prüfen
+        out = edit_file(job, src, e.get("kind", ""), ed, work)
+    except OptionError as ex:
+        if job.cancel_requested:
+            job.status, job.stage = "cancelled", "Abgebrochen"
+        else:
+            job.status, job.stage, job.error = "error", "Fehler", str(ex)
+        return
+    dest = unique_path(src.parent / out.name)
+    shutil.move(str(out), dest)
+    job.files = [str(dest)]
+    meta = {"title": f"{e.get('title') or src.stem} ({edit_label(ed)})", "webpage_url": e.get("url"),
+            "thumbnail": e.get("thumbnail"), "id": e.get("vid"), "extractor_key": e.get("extractor"),
+            "uploader": e.get("uploader"), "duration": round(probe(str(dest))["duration"])}
+    new = lib_add(str(dest), meta, job)
+    if not ed["keep"]:
+        with LIB_LOCK:
+            new.update(pinned=e.get("pinned", False), shared=e.get("shared", False))
+        lib_delete(e["id"])
+    job.status, job.stage, job.percent = "finished", "Fertig", 100.0
+
+
+def also_audio(job: "Job"):
+    """„Video + Audio“: aus jedem fertigen Video zusätzlich eine Audiodatei daneben legen."""
+    fmt = job.options.get("audioFormat")
+    fmt = fmt if fmt in AUDIO_ENC else "mp3"
+    for f in list(job.files):
+        src = Path(f)
+        if kind_of(f) != "video" or not src.exists():
+            continue
+        info = probe(f)
+        if not info["audio"]:
+            continue
+        out = unique_path(src.with_suffix("." + fmt))
+        run_ffmpeg(job, ["-i", f, "-map", "0:a:0", "-vn", "-sn"] + audio_enc(fmt, job.options.get("audioBitrate")) + [str(out)],
+                   info["duration"], "Audio-Datei erstellen", 0, 100)
+        job.files.append(str(out))
+        job.file_meta[str(out)] = job.file_meta.get(f) or dict(job.meta)
+
+
+# --------------------------------------------------------------------------- #
 # Presets für Handy-Kurzbefehle (/api/add?preset=…)
 # --------------------------------------------------------------------------- #
 
@@ -1229,6 +1413,8 @@ SERVER_PRESETS = {
     "whatsapp": {"mode": "video", "quality": "720", "container": "mp4", "vcodec": "h264",
                  "convert": {"type": "small", "targetMB": 15}},
     "gif": {"mode": "video", "quality": "720", "container": "mp4", "convert": {"type": "gif"}},
+    "both": {"mode": "video", "quality": "best", "container": "mp4", "vcodec": "h264",
+             "alsoAudio": True, "audioFormat": "mp3", "audioBitrate": "320"},
 }
 BASE_OPTIONS = {"embedThumbnail": True, "embedMetadata": True, "embedChapters": True, "concurrentFragments": 4}
 
@@ -1647,8 +1833,8 @@ def create_job():
     return jsonify(enqueue(opts).public()), 201
 
 
-def enqueue(opts: dict) -> Job:
-    job = Job(opts, owner=me()["id"])
+def enqueue(opts: dict, owner: str = "") -> Job:
+    job = Job(opts, owner=owner or me()["id"])
     with QUEUE_COND:
         JOBS[job.id] = job
         QUEUE.append(job.id)
@@ -1863,6 +2049,23 @@ def library_share(eid):
         e["shared"] = bool(body.get("shared", not e.get("shared")))
     lib_save()
     return jsonify(lib_public(e))
+
+
+@app.post("/api/library/<eid>/edit")
+def library_edit(eid):
+    """Nachträglich bearbeiten: läuft als Auftrag, das Ergebnis kommt als neue Datei in die Mediathek."""
+    e = _entry(eid, write=True)
+    body = request.get_json(silent=True) or {}
+    owner = USERS.get(e.get("owner") or "") or me()
+    try:
+        check_quota(owner)
+        ed = edit_check(e.get("kind", ""), body)
+    except OptionError as ex:
+        return err(str(ex))
+    ed["eid"] = eid
+    job = enqueue({"url": e.get("url") or "", "title": f"{e.get('title') or e['name']} ({edit_label(ed)})",
+                   "thumbnail": e.get("thumbnail") or "", "edit": ed}, owner=owner["id"])
+    return jsonify(job.public()), 201
 
 
 @app.delete("/api/library/<eid>")

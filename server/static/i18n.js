@@ -186,9 +186,27 @@
     "Funktioniert nur im WLAN zu Hause.": "Only works on the home Wi-Fi.", "Android-App einrichten": "Set up Android app",
     "1. „Kinbox.apk“ aus dem": "1. Get \"Kinbox.apk\" from the", "neuesten Release": "latest release", "aufs Handy laden und installieren.": "onto your phone and install it.",
     "2. Hier am Handy auf „Mit der App verbinden“ tippen.": "2. On your phone, tap \"Connect with the app\" here.", "Mit der App verbinden": "Connect with the app",
+
+    // ---- Bearbeiten (Mediathek), Video + Audio, schwebender Knopf
+    "Als Audio speichern": "Save as audio", "In MP4 umwandeln": "Convert to MP4", "Ton entfernen": "Remove sound", "Drehen": "Rotate",
+    "Lautstärke angleichen": "Normalize volume", "Format ändern": "Change format", "Zielgröße": "Target size", "Richtung": "Direction",
+    "90° nach rechts": "90° clockwise", "90° nach links": "90° counter-clockwise", "Original behalten": "Keep the original", "Starten": "Start", "Jetzt": "Now",
+    "Tipp: abspielen und an der richtigen Stelle auf „Jetzt“ tippen.": "Tip: play it and tap \"Now\" at the right moment.",
+    "Speichert nur den Ton – z. B. als MP3 für Voicemod, OBS oder Soundboards.": "Saves only the sound – e.g. as MP3 for Voicemod, OBS or soundboards.",
+    "MP4 (H.264) spielt überall – OBS, Handy, Fernseher.": "MP4 (H.264) plays everywhere – OBS, phone, TV.",
+    "GIFs gehen bis 90 Sekunden – vorher zuschneiden.": "GIFs can be up to 90 seconds – trim first.", "Für WhatsApp, Discord oder E-Mail.": "For WhatsApp, Discord or email.",
+    "Macht zu leise oder zu laute Dateien gleichmäßig laut.": "Makes files that are too quiet or too loud evenly loud.",
+    "Wird bearbeitet – erscheint gleich in der Mediathek": "Editing – it will show up in the library shortly",
+    "Unbekannte Bearbeitung": "Unknown edit", "Das geht mit dieser Datei nicht": "That doesn't work with this file", "Bitte Start oder Ende angeben": "Please enter a start or end",
+    "Ungültiger Winkel": "Invalid angle", "Diese Datei hat keinen Ton": "This file has no sound", "Die Datei gibt es nicht mehr": "The file no longer exists",
+    "Bearbeitet": "Editing", "Audio-Datei erstellen": "Creating audio file", "Video + MP3 (beides)": "Video + MP3 (both)",
+    "Zusätzlich als Audio-Datei (MP3 – Format wie unter „Audio“)": "Also save as audio file (MP3 – format as under \"Audio\")",
+    "Knopf in andere Ecke": "Move button to another corner", "Auf dieser Seite ausblenden": "Hide on this site", "Position über dem Video": "Position on the video",
+    "Oben links": "Top left", "Oben rechts": "Top right", "Unten links": "Bottom left", "Unten rechts": "Bottom right", "Anzeigen auf": "Show on",
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
+    ["Audio-Datei: {0}", "Audio file: {0}"],
     ["Eingerichtet für: {0}", "Set up for: {0}"],
     ["Aufs Handy ({0})", "To phone ({0})"], ["Lädt herunter ({0})", "Downloading ({0})"], ["Interner Fehler: {0}", "Internal error: {0}"], ["yt-dlp beendet mit Code {0}", "yt-dlp exited with code {0}"],
     ["Ungültige Zeitangabe: {0} (Format z. B. 1:23 oder 01:02:03)", "Invalid time: {0} (format e.g. 1:23 or 01:02:03)"],

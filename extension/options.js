@@ -14,6 +14,17 @@ async function init() {
   $("#showYoutubeButton").checked = settings.showYoutubeButton;
   $("#notify").checked = settings.notify;
   $("#showSocialButtons").checked = settings.showSocialButtons;
+  $("#socialPos").value = settings.socialPos;
+  $("#socialPos").addEventListener("change", (e) => saveSettings({ socialPos: e.target.value }));
+  const sites = [...document.querySelectorAll("#socialSites input")];
+  for (const c of sites) c.checked = !(settings.socialOff || []).includes(c.value);
+  $("#socialSites").addEventListener("change", () => saveSettings({ socialOff: sites.filter((c) => !c.checked).map((c) => c.value) }));
+  // Menü ▾ am Knopf kann Position/Seiten ändern – Anzeige aktuell halten
+  chrome.storage.onChanged.addListener((c, area) => {
+    if (area !== "sync") return;
+    if (c.socialPos) $("#socialPos").value = c.socialPos.newValue;
+    if (c.socialOff) for (const x of sites) x.checked = !c.socialOff.newValue.includes(x.value);
+  });
   renderPresets();
   renderLook();
   if (settings.serverUrl) test(false);

@@ -191,7 +191,7 @@
     "Als Audio speichern": "Save as audio", "In MP4 umwandeln": "Convert to MP4", "Ton entfernen": "Remove sound", "Drehen": "Rotate",
     "Lautstärke angleichen": "Normalize volume", "Format ändern": "Change format", "Zielgröße": "Target size", "Richtung": "Direction",
     "90° nach rechts": "90° clockwise", "90° nach links": "90° counter-clockwise", "Original behalten": "Keep the original", "Starten": "Start", "Jetzt": "Now",
-    "Tipp: abspielen und an der richtigen Stelle auf „Jetzt“ tippen.": "Tip: play it and tap \"Now\" at the right moment.",
+    "Regler ziehen oder abspielen und an der richtigen Stelle auf „Jetzt“ tippen.": "Drag the slider, or play it and tap \"Now\" at the right moment.",
     "Speichert nur den Ton – z. B. als MP3 für Voicemod, OBS oder Soundboards.": "Saves only the sound – e.g. as MP3 for Voicemod, OBS or soundboards.",
     "MP4 (H.264) spielt überall – OBS, Handy, Fernseher.": "MP4 (H.264) plays everywhere – OBS, phone, TV.",
     "GIFs gehen bis 90 Sekunden – vorher zuschneiden.": "GIFs can be up to 90 seconds – trim first.", "Für WhatsApp, Discord oder E-Mail.": "For WhatsApp, Discord or email.",

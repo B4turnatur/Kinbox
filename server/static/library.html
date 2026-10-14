@@ -84,6 +84,13 @@ dialog::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(3px); }
 .editbox { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .editbox[hidden], .editbox [hidden] { display: none !important; }
 #eGo { justify-content: center; }
+.range { position: relative; height: 28px; margin: 2px 10px; }
+.range-track { position: absolute; left: 0; right: 0; top: 12px; height: 4px; border-radius: 2px; background: var(--line); }
+.range-fill { position: absolute; top: 0; bottom: 0; background: var(--accent); border-radius: 2px; }
+.range input[type=range] { position: absolute; inset: 0; width: 100%; margin: 0; padding: 0; background: none; border: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+.range input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 16px; height: 22px; border-radius: 5px; background: #fff; border: 3px solid var(--accent); cursor: ew-resize; }
+.range input[type=range]::-moz-range-thumb { pointer-events: auto; width: 10px; height: 16px; border-radius: 5px; background: #fff; border: 3px solid var(--accent); cursor: ew-resize; }
+.range input[type=range]::-webkit-slider-runnable-track { background: none; height: 28px; }
 .editbox label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 13px; }
 .close { position: sticky; top: 8px; float: right; margin: 8px 8px -44px 0; z-index: 2; background: rgba(0,0,0,.6); color: #fff; border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 18px; }
 
@@ -268,6 +275,11 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
         <button class="chip" data-op="mute" data-k="video">Ton entfernen</button>
         <button class="chip" data-op="rotate" data-k="video">Drehen</button>
         <button class="chip" data-op="loudnorm" data-k="video audio">Lautstärke angleichen</button>
+      </div>
+      <div class="range" data-ep="cut" id="eRange">
+        <div class="range-track"><div class="range-fill" id="eFill"></div></div>
+        <input type="range" id="rS" min="0" max="100" step="0.1" value="0" aria-label="Start">
+        <input type="range" id="rE" min="0" max="100" step="0.1" value="100" aria-label="Ende">
       </div>
       <div class="row" data-ep="cut">
         <label>Start <span class="copy"><input id="eStart" placeholder="0:00"><button type="button" class="btn" data-now="eStart">Jetzt</button></span></label>
@@ -591,6 +603,7 @@ function openPlayer(e) {
   $("#pDelete").textContent = "Löschen"; delete $("#pDelete").dataset.sure;
   $("#pEdit").hidden = !canEdit || !["video", "audio"].includes(e.kind);
   $("#editBox").hidden = true; $("#eStart").value = $("#eEnd").value = "";
+  m.querySelector("video, audio")?.addEventListener("loadedmetadata", () => { if (!$("#editBox").hidden) setupRange(); });
   $("#playerDlg").showModal();
 }
 function drawShare() { $("#pShare").innerHTML = ic(current.shared ? "check" : "users") + " " + (current.shared ? "Geteilt" : "Mit Familie teilen"); }
@@ -620,7 +633,7 @@ $("#pDownload").addEventListener("click", () => setTimeout(load, 70000));
 // ---- Nachträglich bearbeiten (läuft als Auftrag auf dem Server) ----------
 let eOp = "cut";
 const EDIT_HINT = {
-  cut: "Tipp: abspielen und an der richtigen Stelle auf „Jetzt“ tippen.",
+  cut: "Regler ziehen oder abspielen und an der richtigen Stelle auf „Jetzt“ tippen.",
   audio: "Speichert nur den Ton – z. B. als MP3 für Voicemod, OBS oder Soundboards.",
   mp4: "MP4 (H.264) spielt überall – OBS, Handy, Fernseher.",
   gif: "GIFs gehen bis 90 Sekunden – vorher zuschneiden.",
@@ -634,15 +647,46 @@ function drawEdit() {
   $("#eAudioOp").textContent = current.kind === "audio" ? "Format ändern" : "Als Audio speichern";
   $$("#editBox [data-ep]").forEach((p) => p.hidden = p.dataset.ep !== eOp);
   $("#eHint").textContent = EDIT_HINT[eOp] || "";
+  setupRange();
 }
 $("#pEdit").addEventListener("click", () => {
   const b = $("#editBox"); b.hidden = !b.hidden;
   if (!b.hidden) { drawEdit(); b.scrollIntoView({ behavior: "smooth", block: "nearest" }); }
 });
 $("#editOps").addEventListener("click", (e) => { const c = e.target.closest("[data-op]"); if (c) { eOp = c.dataset.op; drawEdit(); } });
+// Zuschneiden: Doppel-Regler ⇄ Felder, Ziehen springt im Player mit
+const tfmt = (s) => Math.floor(s / 60) + ":" + (s % 60).toFixed(1).padStart(4, "0");
+const tparse = (v) => v.trim() ? v.split(":").reduce((a, x) => a * 60 + parseFloat(x || 0), 0) : null;
+const mediaEl = () => $("#media video, #media audio");
+function drawRange() {
+  const d = +$("#rS").max, a = +$("#rS").value / d * 100, b = +$("#rE").value / d * 100;
+  $("#eFill").style.left = a + "%"; $("#eFill").style.width = Math.max(0, b - a) + "%";
+}
+function setupRange() {
+  const m = mediaEl(), d = (m && isFinite(m.duration) && m.duration) || current.duration || 0;
+  $("#eRange").hidden = eOp !== "cut" || !d;
+  if (!d) return;
+  $("#rS").max = $("#rE").max = d;
+  $("#rS").value = tparse($("#eStart").value) ?? 0;
+  $("#rE").value = tparse($("#eEnd").value) ?? d;
+  $("#eEnd").placeholder = tfmt(d);
+  drawRange();
+}
+for (const [r, inp, other, dir] of [["#rS", "#eStart", "#rE", -1], ["#rE", "#eEnd", "#rS", 1]]) {
+  $(r).addEventListener("input", () => {
+    const o = +$(other).value;
+    if (dir < 0 && +$(r).value > o - 0.5) $(r).value = o - 0.5;
+    if (dir > 0 && +$(r).value < o + 0.5) $(r).value = o + 0.5;
+    const v = +$(r).value;
+    $(inp).value = dir > 0 && v >= +$(r).max - 0.05 ? "" : dir < 0 && v <= 0.05 ? "" : tfmt(v);
+    drawRange();
+    const m = mediaEl(); if (m) { m.pause(); m.currentTime = v; }
+  });
+  $(inp).addEventListener("change", setupRange);
+}
 $("#editBox").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-now]"), m = $("#media video, #media audio");
-  if (b && m) { const s = m.currentTime; $("#" + b.dataset.now).value = Math.floor(s / 60) + ":" + (s % 60).toFixed(1).padStart(4, "0"); }
+  const b = e.target.closest("[data-now]"), m = mediaEl();
+  if (b && m) { $("#" + b.dataset.now).value = tfmt(m.currentTime); setupRange(); }
 });
 $("#eGo").addEventListener("click", async () => {
   const body = { op: eOp, keep: $("#eKeep").checked, start: $("#eStart").value.trim(), end: $("#eEnd").value.trim(),

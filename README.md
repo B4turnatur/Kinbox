@@ -205,7 +205,7 @@ This file is created on first start. Restart the server after editing it.
 | `site_args` | extra arguments for specific sites (includes a TikTok fix) |
 | `night` | night window, e.g. `{"start": "01:00", "end": "07:00"}` |
 
-**Cookies:** export a `cookies.txt` with an extension like "Get cookies.txt LOCALLY", put it on the server, set `cookies_file` – that's it. Kinbox then uses them automatically for every download (phone shortcuts included). You may also point it at the folder containing `cookies.txt`.
+**Cookies:** log in in your browser, export a `cookies.txt` with an extension like "Get cookies.txt LOCALLY" and pick it in the library under ⚙ → Server → **Upload cookies.txt** – that's it. You can upload several sites (e.g. Instagram and YouTube) one after another; they get merged. Alternatively put the file on the server yourself and set `cookies_file`. Kinbox then uses them automatically for every download (phone shortcuts included). You may also point it at the folder containing `cookies.txt`.
 
 ## Troubleshooting
 

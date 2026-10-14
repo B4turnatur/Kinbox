@@ -25,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.8.2"
+APP_VERSION = "3.9.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -383,6 +383,21 @@ def cookie_args(work: Path) -> list[str]:
     except OSError as e:
         raise OptionError(f"Cookie-Datei nicht lesbar: {e}")
     return ["--cookies", str(dst)]
+
+
+def merge_cookies(old: str, new: str) -> str:
+    """Fügt eine neue cookies.txt (Netscape-Format) in die bisherige ein – so können Instagram und
+    YouTube nacheinander hochgeladen werden. Gleiche Cookies (Domain, Pfad, Name) ersetzt die neue Datei."""
+    def rows(text):
+        for line in text.replace("\r", "").split("\n"):
+            f = line.split("\t")
+            if len(f) == 7 and not (line.startswith("#") and not line.startswith("#HttpOnly_")):
+                yield (f[0], f[2], f[5]), line
+    new_rows = dict(rows(new))
+    if not new_rows:
+        raise OptionError("Das ist keine cookies.txt – bitte mit „Get cookies.txt LOCALLY“ exportieren")
+    merged = {**dict(rows(old)), **new_rows}
+    return "# Netscape HTTP Cookie File\n" + "\n".join(merged.values()) + "\n"
 
 
 # --------------------------------------------------------------------------- #
@@ -1934,6 +1949,57 @@ def update_ytdlp():
         return jsonify(ok=r.returncode == 0, ytdlp=ytdlp_version(), output="\n".join(out))
     finally:
         _update_lock.release()
+
+
+COOKIES_FILE = DATA_DIR / "cookies.txt"
+
+
+def cookie_sites() -> list[str]:
+    try:
+        text = Path(SETTINGS.get("cookies_file") or "").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    sites = {l.split("\t")[0].removeprefix("#HttpOnly_").lstrip(".").removeprefix("www.")
+             for l in text.splitlines() if l.count("\t") == 6}
+    return sorted(sites)
+
+
+@app.get("/api/cookies")
+def get_cookies():
+    need_admin()
+    return jsonify(sites=cookie_sites())
+
+
+@app.post("/api/cookies")
+def upload_cookies():
+    need_admin()
+    text = str((request.get_json(silent=True) or {}).get("text") or "")
+    if len(text) > 2_000_000:
+        return err("Datei zu groß")
+    old = ""
+    try:
+        old = Path(SETTINGS.get("cookies_file") or "").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        pass
+    try:
+        data = merge_cookies(old, text)
+    except OptionError as e:
+        return err(str(e))
+    with SETTINGS_LOCK:
+        COOKIES_FILE.write_text(data, encoding="utf-8")
+        SETTINGS["cookies_file"] = str(COOKIES_FILE)
+        save_settings(SETTINGS)
+    return jsonify(sites=cookie_sites())
+
+
+@app.delete("/api/cookies")
+def delete_cookies():
+    need_admin()
+    with SETTINGS_LOCK:
+        COOKIES_FILE.unlink(missing_ok=True)
+        SETTINGS["cookies_file"] = ""
+        save_settings(SETTINGS)
+    return jsonify(sites=[])
 
 
 

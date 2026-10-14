@@ -166,6 +166,10 @@
     "Kein Link gefunden": "No link found", "Auftrag läuft noch": "Job is still running", "Erst abbrechen, dann löschen": "Cancel first, then delete",
     "Das gehört jemand anderem": "That belongs to someone else", "Datei konnte nicht gelöscht werden (wird sie gerade benutzt?)": "File could not be deleted (is it in use?)",
     "Uhrzeit bitte als HH:MM angeben": "Please enter the time as HH:MM", "Update läuft bereits": "Update already running",
+    "Für Instagram, altersbeschränkte Videos und den YouTube-Bot-Check: im Browser einloggen, mit der Erweiterung „Get cookies.txt LOCALLY“ exportieren und hier hochladen. Mehrere Seiten nacheinander hochladen geht.": "For Instagram, age-restricted videos and YouTube's bot check: log in in your browser, export with the \"Get cookies.txt LOCALLY\" extension and upload here. You can upload several sites one after another.",
+    "cookies.txt hochladen": "Upload cookies.txt", "Keine Cookies eingerichtet": "No cookies set up", "Cookies gespeichert": "Cookies saved",
+    "Alle Cookies entfernen?": "Remove all cookies?", "Datei zu groß": "File too large",
+    "Das ist keine cookies.txt – bitte mit „Get cookies.txt LOCALLY“ exportieren": "This isn't a cookies.txt – please export it with \"Get cookies.txt LOCALLY\"",
     "Kinbox-Update": "Kinbox update", "Jetzt aktualisieren": "Update now", "Suche nach Updates …": "Checking for updates …",
     "Lade Update …": "Downloading update …", "Kinbox startet neu …": "Kinbox is restarting …",
     "Kinbox jetzt aktualisieren? Der Server startet dafür kurz neu.": "Update Kinbox now? The server will restart briefly.",
@@ -185,6 +189,7 @@
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
+    ["Eingerichtet für: {0}", "Set up for: {0}"],
     ["Aufs Handy ({0})", "To phone ({0})"], ["Lädt herunter ({0})", "Downloading ({0})"], ["Interner Fehler: {0}", "Internal error: {0}"], ["yt-dlp beendet mit Code {0}", "yt-dlp exited with code {0}"],
     ["Ungültige Zeitangabe: {0} (Format z. B. 1:23 oder 01:02:03)", "Invalid time: {0} (format e.g. 1:23 or 01:02:03)"],
     ["Ungültiger Wert für {0}", "Invalid value for {0}"], ["{0} muss zwischen {1} und {2} liegen", "{0} must be between {1} and {2}"],

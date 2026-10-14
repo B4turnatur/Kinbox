@@ -356,6 +356,9 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
       <label>Von <input type="time" id="nStart"></label>
       <label>Bis <input type="time" id="nEnd"></label>
     </div>
+    <h2><svg class="i"><use href="/static/icons.svg#lock"/></svg> Cookies</h2>
+    <div class="hint">Für Instagram, altersbeschränkte Videos und den YouTube-Bot-Check: im Browser einloggen, mit der Erweiterung „Get cookies.txt LOCALLY“ exportieren und hier hochladen. Mehrere Seiten nacheinander hochladen geht.</div>
+    <div class="row"><span class="hint" id="cookieInfo"></span><label class="btn">cookies.txt hochladen<input type="file" id="cookieFile" accept=".txt,text/plain" hidden></label><button type="button" class="btn" id="cookieDel" hidden>Entfernen</button></div>
     <h2><svg class="i"><use href="/static/icons.svg#update"/></svg> Kinbox-Update</h2>
     <div class="row"><span class="hint" id="updInfo"></span><button type="button" class="btn primary" id="appUpdate" hidden>Jetzt aktualisieren</button></div>
     <div class="hint" id="srvInfo"></div>
@@ -651,6 +654,7 @@ async function openSettings(tab = "profile") {
       $("#nStart").value = p.night.start.padStart(5, "0");
       $("#nEnd").value = p.night.end.padStart(5, "0");
       checkAppUpdate();
+      api("/api/cookies").then(showCookies).catch(() => {});
       $("#srvInfo").innerHTML = `Kinbox ${esc(p.version)} · yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>`;
     }
     if (!isAdmin && (tab === "family" || tab === "server")) tab = "profile";
@@ -704,6 +708,20 @@ $("#appUpdate").addEventListener("click", async () => {
     toast(t("Kinbox antwortet nicht – bitte Seite neu laden"), true);
   } catch (e) { toast(e.message, true); $("#updInfo").textContent = ""; }
   finally { b.disabled = false; }
+});
+function showCookies(r) {
+  $("#cookieInfo").textContent = r.sites.length ? t(`Eingerichtet für: ${r.sites.join(", ")}`) : t("Keine Cookies eingerichtet");
+  $("#cookieDel").hidden = !r.sites.length;
+}
+$("#cookieFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try { showCookies(await api("/api/cookies", { method: "POST", body: JSON.stringify({ text: await f.text() }) })); toast("Cookies gespeichert"); }
+  catch (err) { toast(err.message, true); }
+});
+$("#cookieDel").addEventListener("click", async () => {
+  if (!confirm(t("Alle Cookies entfernen?"))) return;
+  try { showCookies(await api("/api/cookies", { method: "DELETE" })); toast("Gelöscht"); } catch (err) { toast(err.message, true); }
 });
 $("#srvForm").addEventListener("submit", async (e) => {
   e.preventDefault();

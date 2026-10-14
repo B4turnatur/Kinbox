@@ -26,4 +26,15 @@ with tempfile.TemporaryDirectory() as d:
     assert server.cookie_args(d / "job3") == []
     os.chmod(src, stat.S_IWRITE | stat.S_IREAD)
 
+# merge_cookies(): neue Datei ergänzt/ersetzt, Müll wird abgelehnt
+ig = ".instagram.com\tTRUE\t/\tTRUE\t0\tsessionid\tALT\n"
+yt = "# Netscape HTTP Cookie File\r\n#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tY\r\n"
+m = server.merge_cookies(ig, yt + ig.replace("ALT", "NEU"))
+assert "NEU" in m and "ALT" not in m and "#HttpOnly_.youtube.com" in m and "\r" not in m, m
+try:
+    server.merge_cookies("", "<html>kein Cookie</html>")
+    raise AssertionError("Müll angenommen")
+except server.OptionError:
+    pass
+
 print("cookies ok")

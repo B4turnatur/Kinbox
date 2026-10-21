@@ -449,6 +449,8 @@ async function api(path, opts = {}) {
   return data;
 }
 const fileUrl = (id, what) => `/api/library/${id}/${what}?token=${encodeURIComponent(token)}`;
+// Vorschaubild vom Server (dort gespeichert – die Links von TikTok & Co. laufen nach Stunden ab)
+const thumbOf = (e) => e.kind === "image" || e.kind === "gif" ? fileUrl(e.id, "stream") : e.kind === "video" || (e.kind === "audio" && e.thumbnail) ? fileUrl(e.id, "thumb") : "";
 
 let pickUser = null, pin = "";
 async function showPicker() {
@@ -545,7 +547,7 @@ function render() {
     : scope === "family" ? "Noch nichts geteilt.<br>Öffne eine deiner Dateien und tippe auf „Mit Familie teilen“."
     : "Noch nichts heruntergeladen.<br>Tippe auf „＋ Link“ oder nutze die Browser-Erweiterung.";
   $("#grid").innerHTML = list.map((e) => {
-    const bg = e.kind === "image" || e.kind === "gif" ? fileUrl(e.id, "stream") : e.thumbnail;
+    const bg = thumbOf(e);
     const icon = !bg ? ic(e.kind === "audio" ? "music" : e.kind === "video" ? "play" : "file") : "";
     const mine = e.owner === me.id;
     const warn = e.delete_at ? `<div class="warn">Wird gleich gelöscht</div>` : "";
@@ -583,8 +585,8 @@ $("#grid").addEventListener("click", (e) => { const c = e.target.closest(".card"
 function openPlayer(e) {
   current = e;
   const src = fileUrl(e.id, "stream"), m = $("#media");
-  if (e.kind === "video") m.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline poster="${esc(e.thumbnail || "")}"></video>`;
-  else if (e.kind === "audio") m.innerHTML = `${e.thumbnail ? `<div class="cover" style="background-image:url('${esc(e.thumbnail)}')"></div>` : ""}<audio src="${esc(src)}" controls autoplay></audio>`;
+  if (e.kind === "video") m.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline poster="${esc(thumbOf(e))}"></video>`;
+  else if (e.kind === "audio") m.innerHTML = `${thumbOf(e) ? `<div class="cover" style="background-image:url('${esc(thumbOf(e))}')"></div>` : ""}<audio src="${esc(src)}" controls autoplay></audio>`;
   else if (e.kind === "image" || e.kind === "gif") m.innerHTML = `<img src="${esc(src)}" alt="">`;
   else m.innerHTML = `<div style="padding:40px;color:#aaa">Keine Vorschau</div>`;
   const v = m.querySelector("video");

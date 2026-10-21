@@ -26,7 +26,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.11.0"
+APP_VERSION = "3.11.1"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -942,6 +942,7 @@ def lib_add(path: str, meta: dict, job: "Job") -> dict:
             }
             LIB[entry["id"]] = entry
     lib_save()
+    threading.Thread(target=thumb_file, args=(entry,), daemon=True).start()   # bevor der Link abläuft
     return entry
 
 
@@ -969,6 +970,8 @@ def lib_delete(eid: str, reason: str = "") -> bool:
             return False       # z. B. unter Windows noch geöffnet – später erneut versuchen
         _remove_empty_dirs(p)
         LIB.pop(eid, None)
+        for ext in (".jpg", ".none"):
+            (THUMB_DIR / (eid + ext)).unlink(missing_ok=True)
         if reason:
             CLEANUP_LOG.appendleft({"time": time.time(), "name": e["name"], "size": e.get("size", 0),
                                     "reason": reason, "owner": e.get("owner")})
@@ -991,6 +994,43 @@ def lib_public(e: dict) -> dict:
     if d["folder"] == ".":
         d["folder"] = ""
     return d
+
+
+THUMB_DIR = DATA_DIR / "thumbs"
+THUMB_SEM = threading.Semaphore(2)      # Mediathek lädt viele Karten gleichzeitig – ffmpeg nicht 50-mal parallel
+
+
+def thumb_file(e: dict) -> Path | None:
+    """Vorschaubild lokal speichern – Links von TikTok/Instagram laufen nach Stunden ab. Erst das Bild der Seite,
+    sonst ein Bild aus der Datei selbst (Videobild bzw. eingebettetes Cover); klappt beides nicht: <id>.none."""
+    out, none = THUMB_DIR / f"{e['id']}.jpg", THUMB_DIR / f"{e['id']}.none"
+    if out.exists() or none.exists():
+        return out if out.exists() else None
+    with THUMB_SEM:
+        if out.exists() or none.exists():
+            return out if out.exists() else None
+        THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        tries = []
+        if (e.get("thumbnail") or "").startswith("http"):
+            tries.append(["-user_agent", "Mozilla/5.0", "-i", e["thumbnail"]])
+        if e.get("kind") == "video":
+            tries.append(["-ss", str(min(1.0, (e.get("duration") or 0) / 3)), "-i", e["path"]])
+        if e.get("kind") in ("video", "audio"):
+            tries.append(["-i", e["path"]])
+        for src in tries:
+            tmp = out.with_suffix(".part.jpg")
+            try:
+                subprocess.run([ffmpeg_bin("ffmpeg"), "-v", "error", "-y"] + src + ["-an", "-frames:v", "1",
+                               "-vf", "scale='min(480,iw)':-2", str(tmp)], capture_output=True, timeout=30,
+                               **({"creationflags": 0x08000000} if IS_WINDOWS else {}))
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            if tmp.exists() and tmp.stat().st_size:
+                os.replace(tmp, out)
+                return out
+            tmp.unlink(missing_ok=True)
+        none.touch()
+        return None
 
 
 def lib_stats(owner: str | None = None) -> dict:
@@ -2162,6 +2202,14 @@ def library_stream(eid):
     return send_file(e["path"], mimetype=mt, conditional=True, max_age=0)
 
 
+@app.get("/api/library/<eid>/thumb")
+def library_thumb(eid):
+    p = thumb_file(_entry(eid))
+    if not p:
+        abort(404)
+    return send_file(p, mimetype="image/jpeg", max_age=86400)
+
+
 @app.get("/api/library/<eid>/download")
 def library_download(eid):
     e = _entry(eid)
@@ -2483,6 +2531,7 @@ def main():
     load_jobs()
     migrate_owners()
     threading.Thread(target=_janitor, daemon=True).start()
+    threading.Thread(target=lambda: [thumb_file(e) for e in list(LIB.values())], daemon=True).start()
     JANITOR_WAKE.set()
     for _ in range(8):
         threading.Thread(target=_worker, daemon=True).start()

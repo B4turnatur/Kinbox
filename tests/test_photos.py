@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory() as d:
     d = Path(d)
     server.SETTINGS["download_dir"] = str(d)
     server.LIBRARY_FILE = d / "library.json"
+    server.THUMB_DIR = d / "thumbs"
     (d / "fake.py").write_text(FAKE)
     server.gallerydl_base = lambda: [sys.executable, str(d / "fake.py")]
     server.ensure_gallerydl = lambda: None

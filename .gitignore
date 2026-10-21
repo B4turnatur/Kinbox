@@ -3,6 +3,7 @@ server/settings.json
 server/users.json
 server/jobs.json
 server/library.json
+server/thumbs/
 server/*.tmp
 cookies*.txt
 *_cookies.txt

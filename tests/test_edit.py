@@ -12,6 +12,7 @@ with tempfile.TemporaryDirectory() as d:
     d = Path(d)
     server.SETTINGS["download_dir"] = str(d)
     server.LIBRARY_FILE = d / "library.json"          # echte library.json nicht anfassen
+    server.THUMB_DIR = d / "thumbs"
     src = d / "clip.mp4"
     subprocess.run([server.ffmpeg_bin("ffmpeg"), "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=6",
                     "-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-c:v", "libx264", "-c:a", "aac", "-shortest", str(src)], check=True)

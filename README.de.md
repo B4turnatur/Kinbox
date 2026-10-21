@@ -189,7 +189,7 @@ Jede Person hat ihren **eigenen Bereich**: eigener Ordner, eigene Mediathek, eig
 | **Umwandeln** | Als **GIF** oder **verkleinern** auf 8 MB (Discord), 15 MB (WhatsApp), 25 MB (E-Mail) … |
 | **Video + MP3** | Beides mit einem Download (Preset oder Schalter „Zusätzlich als Audio-Datei“) – z. B. MP4 für OBS und MP3 für Voicemod |
 | **Nachträglich bearbeiten** | In der Mediathek Datei öffnen → ✂ *Bearbeiten*: zuschneiden (mit „Jetzt“ aus dem Player), als Audio speichern / Format ändern, in MP4 umwandeln, GIF, verkleinern, Ton entfernen, drehen, Lautstärke angleichen. Das Ergebnis kommt als neue Datei dazu, das Original bleibt (außer „Original behalten“ ist aus). |
-| **Foto-Beiträge** | Instagram-Bilder und -Karussells, TikTok-Foto-Slideshows (samt Musik), X, Reddit & Co. – einfach „Herunterladen“ drücken, Kinbox nimmt dann von selbst [gallery-dl](https://github.com/mikf/gallery-dl). Instagram braucht meist Cookies (siehe unten). |
+| **Foto-Beiträge** | Instagram-Bilder und -Karussells, TikTok-Foto-Slideshows (samt Musik), X, Reddit & Co. – einfach „Herunterladen“ drücken, Kinbox nimmt dann von selbst [gallery-dl](https://github.com/mikf/gallery-dl). Ein Beitrag mit mehreren Bildern bekommt einen eigenen Ordner und erscheint in der Mediathek als ein Album – „Alle aufs Gerät“ speichert alle Bilder auf einmal. Instagram braucht meist Cookies (siehe unten). |
 | **Musik-Modus** | Interpret und Titel werden sauber aus „Interpret – Titel" gelesen, Cover quadratisch zugeschnitten |
 | **Ordnerstruktur** | Alles in einen Ordner, nach Kanal, **Plex/Jellyfin** (Kanal › Season Jahr › Folge) oder Musik (Interpret › Titel) |
 | **Nachts laden** | 🌙-Schalter: Download startet erst im Nachtfenster (Standard 01:00–07:00) |

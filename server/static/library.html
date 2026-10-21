@@ -77,6 +77,9 @@ dialog::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(3px); }
 .media video, .media img { max-width: 100%; max-height: 70vh; display: block; }
 .media audio { width: 92%; margin: 30px 0; }
 .media .cover { width: 100%; aspect-ratio: 16/9; background: center/contain no-repeat; }
+.album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.album-grid .thumb { aspect-ratio: 3/4; border-radius: min(10px, var(--round)); cursor: pointer; }
+.album-grid .thumb:hover { outline: 2px solid var(--accent); }
 .dlg-body { padding: 14px 16px 16px; }
 .dlg-body h2 { font-size: 17px; margin: 0 0 4px; }
 .dlg-body .meta { color: var(--muted); font-size: 13px; margin-bottom: 12px; word-break: break-word; }
@@ -306,6 +309,20 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
   </div>
 </dialog>
 
+<!-- ============ Album (Foto-Beitrag mit mehreren Bildern) ============ -->
+<dialog id="albumDlg">
+  <button class="close" id="closeAlbum" aria-label="Schließen"><svg class="i"><use href="/static/icons.svg#x"/></svg></button>
+  <div class="dlg-body">
+    <h2 id="aTitle"></h2>
+    <div class="meta" id="aMeta"></div>
+    <div class="album-grid" id="aGrid"></div>
+    <div class="actions">
+      <button class="btn primary" id="aDownload"></button>
+      <a class="btn" id="aSource" target="_blank" rel="noopener"><svg class="i"><use href="/static/icons.svg#external"/></svg> Original</a>
+    </div>
+  </div>
+</dialog>
+
 <!-- ============ Link hinzufügen ============ -->
 <dialog id="addDlg">
   <form class="form" id="addForm">
@@ -523,6 +540,7 @@ async function load() {
   }
   renderCleanupNotice();
   render();
+  if ($("#albumDlg").open) openAlbum(albumId);
 }
 
 function renderCleanupNotice() {
@@ -543,10 +561,15 @@ function render() {
   const s = $("#sort").value;
   list.sort((a, b) => s === "old" ? a.added - b.added : s === "big" ? b.size - a.size : s === "name" ? a.title.localeCompare(b.title) : b.added - a.added);
   $("#empty").hidden = list.length > 0;
+  // Foto-Beiträge mit mehreren Dateien als eine Album-Karte
+  const groups = {}, seen = new Set();
+  for (const e of list) if (e.album) (groups[e.album] ||= []).push(e);
+  list = list.filter((e) => !e.album || groups[e.album].length < 2 || (!seen.has(e.album) && seen.add(e.album)));
   $("#empty").innerHTML = items.length ? "Nichts gefunden."
     : scope === "family" ? "Noch nichts geteilt.<br>Öffne eine deiner Dateien und tippe auf „Mit Familie teilen“."
     : "Noch nichts heruntergeladen.<br>Tippe auf „＋ Link“ oder nutze die Browser-Erweiterung.";
   $("#grid").innerHTML = list.map((e) => {
+    if (e.album && groups[e.album].length > 1) return albumCard(e);
     const bg = thumbOf(e);
     const icon = !bg ? ic(e.kind === "audio" ? "music" : e.kind === "video" ? "play" : "file") : "";
     const mine = e.owner === me.id;
@@ -581,7 +604,55 @@ $("#ownerFilter").addEventListener("change", load);
 
 // ---- Player -------------------------------------------------------------
 let current = null;
-$("#grid").addEventListener("click", (e) => { const c = e.target.closest(".card"); if (c) openPlayer(items.find((x) => x.id === c.dataset.id)); });
+$("#grid").addEventListener("click", (e) => {
+  const c = e.target.closest(".card"); if (!c) return;
+  if (c.dataset.album) openAlbum(c.dataset.album); else openPlayer(items.find((x) => x.id === c.dataset.id));
+});
+
+// ---- Album: alle Dateien eines Foto-Beitrags --------------------------------
+let albumId = null;
+const albumItems = (id) => items.filter((x) => x.album === id).sort((a, b) => a.name.localeCompare(b.name));
+const albumTitle = (e) => e.title.replace(/ \(\d+\/\d+\)$/, "");
+function albumCard(e) {
+  const all = albumItems(e.album), cover = all.find((x) => x.kind === "image") || all[0], mine = e.owner === me.id;
+  const imgs = all.filter((x) => x.kind === "image").length, size = all.reduce((n, x) => n + (x.size || 0), 0);
+  return `<div class="card" data-album="${esc(e.album)}">
+    <div class="thumb" style="background-image:url('${esc(thumbOf(cover))}')">
+      <span class="kind">Album</span>${all.some((x) => x.pinned) ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
+      ${e.shared && mine ? `<span class="shr" title="Mit der Familie geteilt">${ic("users")}</span>` : ""}
+      ${!mine ? `<span class="av owner" title="${esc(e.owner_name)}">${esc(e.owner_avatar)}</span>` : ""}
+      <span class="badge">${ic("image")} ${imgs}${all.length > imgs ? ` + ${ic("music")}` : ""}</span></div>
+    <div class="info"><div class="title">${esc(albumTitle(cover))}</div>
+      <div class="meta">${esc([!mine ? e.owner_name : e.uploader, fmtBytes(size), ago(e.added)].filter(Boolean).join(" · "))}</div></div></div>`;
+}
+function openAlbum(id) {
+  albumId = id;
+  const all = albumItems(id);
+  if (!all.length) return $("#albumDlg").close();
+  const c = all.find((x) => x.kind === "image") || all[0];
+  $("#aTitle").textContent = albumTitle(c);
+  $("#aMeta").textContent = [c.uploader, fmtBytes(all.reduce((n, x) => n + (x.size || 0), 0)), ago(c.added), c.folder].filter(Boolean).join(" · ");
+  $("#aGrid").innerHTML = all.map((x) => { const bg = thumbOf(x);
+    return `<div class="thumb" data-id="${x.id}" title="${esc(x.name)}" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${bg ? "" : ic(x.kind === "audio" ? "music" : "file")}</div>`; }).join("");
+  $("#aDownload").innerHTML = `${ic("download")} Alle aufs Gerät (${all.length})`;
+  $("#aSource").href = c.url || "#";
+  $("#aSource").hidden = !c.url || !/^https?:/.test(c.url);
+  if (!$("#albumDlg").open) $("#albumDlg").showModal();
+}
+$("#aGrid").addEventListener("click", (e) => { const c = e.target.closest("[data-id]"); if (c) openPlayer(items.find((x) => x.id === c.dataset.id)); });
+$("#aDownload").addEventListener("click", async () => {
+  const all = albumItems(albumId);
+  toast(`${all.length} Dateien werden geladen …`);
+  for (const x of all) {     // einzeln, damit die Bilder auf dem Handy in der Galerie landen (kein ZIP)
+    const a = document.createElement("a");
+    a.href = fileUrl(x.id, "download");
+    document.body.append(a); a.click(); a.remove();
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+  setTimeout(load, 70000);
+});
+$("#closeAlbum").addEventListener("click", () => $("#albumDlg").close());
+$("#albumDlg").addEventListener("click", (e) => { if (e.target === $("#albumDlg")) $("#albumDlg").close(); });
 function openPlayer(e) {
   current = e;
   const src = fileUrl(e.id, "stream"), m = $("#media");

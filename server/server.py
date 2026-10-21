@@ -26,7 +26,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.11.1"
+APP_VERSION = "3.12.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -850,15 +850,18 @@ def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = ""):
     title = next((m["title"] for m in metas if m["title"]), "") or (job.title if job.title != job.url else "") \
         or next((m["uploader"] for m in metas if m["uploader"]), "") or "Foto"
     base = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", title)[:60].strip(" .") or "Foto"
-    job_dir.mkdir(parents=True, exist_ok=True)
     n = sum(kind_of(f.name) == "image" for f in media)
+    album = job.id if n > 1 else ""     # mehrere Bilder: eigener Ordner + in der Mediathek als ein Album
+    if album:
+        job_dir = job_dir / base
+    job_dir.mkdir(parents=True, exist_ok=True)
     for i, (f, m) in enumerate(zip(media, metas), 1):
         num = n > 1 and i <= n          # Bilder durchnummerieren; Musik der Slideshow (TikTok) heißt wie der Beitrag
         dst = unique_path(job_dir / (f"{base} {i:02d}{f.suffix}" if num else base + f.suffix))
         shutil.move(str(f), dst)
         job.files.append(str(dst))
         job.file_meta[str(dst)] = {"title": f"{title} ({i}/{n})" if num else title,
-                                   "uploader": m["uploader"], "webpage_url": job.url}
+                                   "uploader": m["uploader"], "webpage_url": job.url, "album": album}
     if job.title == job.url:
         job.title = title
     job.status, job.stage, job.percent = "finished", "Fertig", 100.0
@@ -905,6 +908,10 @@ def lib_load():
         if Path(e.get("path", "")).exists():
             LIB[e["id"]] = e
     CLEANUP_LOG.extend(data.get("cleanup_log", []))
+    # bis 3.11.1: Foto-Beiträge ohne Album – mehrere Bilder aus einem Auftrag nachträglich zusammenfassen
+    old = [e for e in LIB.values() if "album" not in e and photo_site(e.get("url") or "")]
+    for e in old:
+        e["album"] = (e.get("job_id") or "") if sum(o.get("job_id") == e.get("job_id") and o.get("kind") == "image" for o in old) > 1 else ""
 
 
 def lib_save():
@@ -938,7 +945,7 @@ def lib_add(path: str, meta: dict, job: "Job") -> dict:
                 "uploader": meta.get("uploader") or "", "duration": meta.get("duration") or 0,
                 "added": time.time(), "size": size, "kind": kind_of(path), "pinned": False,
                 "job_id": job.id, "pc_downloaded": None, "delete_at": None,
-                "owner": job.owner, "shared": False,
+                "owner": job.owner, "shared": False, "album": meta.get("album") or "",
             }
             LIB[entry["id"]] = entry
     lib_save()
@@ -982,7 +989,7 @@ def lib_delete(eid: str, reason: str = "") -> bool:
 def lib_public(e: dict) -> dict:
     d = {k: e.get(k) for k in ("id", "name", "title", "url", "thumbnail", "uploader", "duration",
                                "added", "size", "kind", "pinned", "extractor", "pc_downloaded", "delete_at",
-                               "owner", "shared")}
+                               "owner", "shared", "album")}
     owner = USERS.get(e.get("owner") or "")
     d["owner_name"] = owner["name"] if owner else "?"
     d["owner_avatar"] = owner["avatar"] if owner else "❔"

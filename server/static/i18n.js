@@ -223,7 +223,7 @@
     ["Preset „{0}\" gespeichert", "Preset \"{0}\" saved"], ["Playlist · {0} Videos · {1}", "Playlist · {0} videos · {1}"], ["Playlist · {0} Videos", "Playlist · {0} videos"],
     ["Schon in der Kinbox ({0})", "Already in Kinbox ({0})"], ["vor {0} Tagen", "{0} days ago"], ["vor {0} Min.", "{0} min ago"], ["vor {0} Std.", "{0} h ago"],
     ["+ {0} weitere", "+ {0} more"], ["{0} · Verbunden · {1}", "{0} · Connected · {1}"], ["Verbunden · {0}", "Connected · {0}"], ["Ziel: {0}", "Destination: {0}"],
-    ["noch {0}", "{0} left"], ["{0} Dateien", "{0} files"], ["Auf PC ({0})", "To PC ({0})"], ["Videos in „{0}\"", "Videos in \"{0}\""],
+    ["noch {0}", "{0} left"], ["{0} Dateien", "{0} files"], ["Alle aufs Gerät ({0})", "All to this device ({0})"], ["{0} Dateien werden geladen …", "Downloading {0} files …"], ["Auf PC ({0})", "To PC ({0})"], ["Videos in „{0}\"", "Videos in \"{0}\""],
     ["✓ Zur Warteschlange hinzugefügt: {0}", "✓ Added to queue: {0}"],
     ["{0} Dateien · {1}", "{0} files · {1}"], ["Gespeichert. Automatisch löschen: {0}", "Saved. Delete automatically: {0}"], ["{0} Dateien gelöscht.", "{0} files deleted."],
     ["{0} Dateien gelöscht", "{0} files deleted"], ["Gespeichert. Ordner: {0} · parallel: {1}", "Saved. Folder: {0} · parallel: {1}"],

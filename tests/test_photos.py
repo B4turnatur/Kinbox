@@ -36,7 +36,9 @@ with tempfile.TemporaryDirectory() as d:
     names = [Path(f).name for f in job.files]
     assert job.status == "finished", (job.status, job.error)
     assert names == ["Urlaub am Meer_ Tag 1 01.jpg", "Urlaub am Meer_ Tag 1 02.jpg", "Urlaub am Meer_ Tag 1.mp3"], names
-    assert all(Path(f).exists() for f in job.files) and not list((d / "ziel").glob("*.json"))
+    assert all(Path(f).exists() for f in job.files) and not list((d / "ziel").rglob("*.json"))
+    assert {Path(f).parent for f in job.files} == {d / "ziel" / "Urlaub am Meer_ Tag 1"}      # eigener Ordner
+    assert {e["album"] for e in server.LIB.values()} == {job.id}
     kinds = sorted(e["kind"] for e in server.LIB.values())
     assert kinds == ["audio", "image", "image"], kinds
     e = next(e for e in server.LIB.values() if e["name"].endswith("01.jpg"))

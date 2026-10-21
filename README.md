@@ -96,7 +96,7 @@ Runs on your PC, no cloud, no account. Just this PC or your whole home network.
 - **Web library** (works great on phones, installable as a PWA): search, filter, play, download to the device, 📌 keep
 - **Family profiles:** "Who's watching?" with optional PIN, a folder, library, queue and clean-up rules for each person, sharing with the family, storage quotas, invite links, multiple admins
 - **Automatic clean-up** per person: after downloading to a device, after X days, or above a size limit
-- **Photo posts:** Instagram pictures and carousels, TikTok photo slideshows (with their music), X, Reddit & co. – just press Download, Kinbox switches to [gallery-dl](https://github.com/mikf/gallery-dl) by itself. Instagram usually needs cookies (see below)
+- **Photo posts:** Instagram pictures and carousels, TikTok photo slideshows (with their music), X, Reddit & co. – just press Download, Kinbox switches to [gallery-dl](https://github.com/mikf/gallery-dl) by itself. A post with several pictures gets its own folder and shows up in the library as one album – "All to this device" saves every picture at once. Instagram usually needs cookies (see below)
 - **Android app:** Share → Kinbox from YouTube, TikTok & co., with every option of the extension (including trimming) – iPhone via the Shortcuts app
 
 yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of them.

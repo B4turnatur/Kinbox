@@ -26,7 +26,7 @@ echo [1/4] Python gefunden (%PY%).
 rem ---- Python-Pakete -----------------------------------------------------
 echo [2/4] Installiere yt-dlp, Flask und Waitress ...
 %PY% -m pip install --upgrade pip >nul
-%PY% -m pip install --upgrade "yt-dlp[default]" flask waitress
+%PY% -m pip install --upgrade "yt-dlp[default]" gallery-dl flask waitress
 if errorlevel 1 (
     echo [!] pip ist fehlgeschlagen. Siehe Meldungen oben.
     pause

@@ -19,6 +19,7 @@ import android.os.Environment
 import android.view.View
 import android.view.WindowInsets
 import android.webkit.JavascriptInterface
+import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -163,6 +164,8 @@ class MainActivity : Activity() {
             .setTitle(file)
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Kinbox/$file")
+        // Typ aus der Endung – ältere Server schicken „octet-stream“, dann bot Android Wallet & Co. zum Öffnen an
+        MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.substringAfterLast('.', "").lowercase())?.let { r.setMimeType(it) }
         getSystemService(DownloadManager::class.java).enqueue(r)
         toast(getString(R.string.saving))
     }

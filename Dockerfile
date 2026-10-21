@@ -3,7 +3,7 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
-RUN pip install --no-cache-dir "yt-dlp[default]" flask waitress certifi
+RUN pip install --no-cache-dir "yt-dlp[default]" gallery-dl flask waitress certifi
 COPY server/server.py /app/server.py
 COPY server/static /app/static
 ENV KINBOX_DOCKER=1 KINBOX_DATA=/data KINBOX_DOWNLOADS=/downloads \

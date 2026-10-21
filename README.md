@@ -96,6 +96,7 @@ Runs on your PC, no cloud, no account. Just this PC or your whole home network.
 - **Web library** (works great on phones, installable as a PWA): search, filter, play, download to the device, 📌 keep
 - **Family profiles:** "Who's watching?" with optional PIN, a folder, library, queue and clean-up rules for each person, sharing with the family, storage quotas, invite links, multiple admins
 - **Automatic clean-up** per person: after downloading to a device, after X days, or above a size limit
+- **Photo posts:** Instagram pictures and carousels, TikTok photo slideshows (with their music), X, Reddit & co. – just press Download, Kinbox switches to [gallery-dl](https://github.com/mikf/gallery-dl) by itself. Instagram usually needs cookies (see below)
 - **Android app:** Share → Kinbox from YouTube, TikTok & co., with every option of the extension (including trimming) – iPhone via the Shortcuts app
 
 yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of them.
@@ -108,7 +109,7 @@ yt-dlp supports 1,000+ sites, and the popup and right-click menu work on all of 
 
 1. Download **`Kinbox.exe`** and **`Kinbox-Extension.zip`** from the [latest release](https://github.com/B4turnatur/Kinbox/releases/latest).
 2. Put `Kinbox.exe` in its own folder, e.g. `C:\Kinbox`, and double-click it. Windows may warn "Windows protected your PC". Click **More info → Run anyway**. The exe isn't signed.
-3. A setup window opens. Choose **Just this PC** or **Server for your home network** and click **Set up**. Kinbox downloads yt-dlp, ffmpeg and deno (about 150 MB) into `tools\`. For the home network, allow access when the Windows firewall asks.
+3. A setup window opens. Choose **Just this PC** or **Server for your home network** and click **Set up**. Kinbox downloads yt-dlp, gallery-dl, ffmpeg and deno (about 160 MB) into `tools\`. For the home network, allow access when the Windows firewall asks.
 4. The window shows the **address** and **token** for the extension (with copy buttons). Kinbox starts automatically when you sign in. Double-clicking `Kinbox.exe` again opens the library.
 
 <p align="center"><img src="docs/images/setup-en.png" alt="Kinbox setup window"></p>
@@ -121,7 +122,7 @@ To update **Kinbox itself**: open the library as admin → ⚙ → **Server** �
 
 1. Copy the `server` folder anywhere, e.g. `C:\Kinbox`.
 2. **Right-click `install.bat` → "Run as administrator".**
-   It installs Python (if needed), yt-dlp, Flask, Waitress, ffmpeg and deno.
+   It installs Python (if needed), yt-dlp, gallery-dl, Flask, Waitress, ffmpeg and deno.
    If Python was just installed, run `install.bat` a second time.
 3. Choose how you want to use Kinbox:
    - **1 = Only this PC (standalone)** – for people with just one computer. Kinbox runs invisibly in the background, starts when you sign in, and can't be reached from the network. No admin rights needed. The installer shows the **token**. In the extension, use the address `http://127.0.0.1:8765`. A "Kinbox" desktop shortcut opens the library.
@@ -156,7 +157,7 @@ The library at `http://<NAS-IP>:8765/library` works as usual – both update but
 ### Linux / macOS
 
 ```bash
-pip install "yt-dlp[default]" flask waitress   # plus ffmpeg and deno from your package manager
+pip install "yt-dlp[default]" gallery-dl flask waitress   # plus ffmpeg and deno from your package manager
 python3 server/server.py
 ```
 
@@ -233,4 +234,4 @@ Translations live in `extension/lib/i18n.js`. `server/static/i18n.js` must be an
 
 ## License
 
-[MIT](LICENSE). Kinbox uses [yt-dlp](https://github.com/yt-dlp/yt-dlp), [ffmpeg](https://ffmpeg.org) and [deno](https://deno.com). They are installed separately and come with their own licenses.
+[MIT](LICENSE). Kinbox uses [yt-dlp](https://github.com/yt-dlp/yt-dlp), [gallery-dl](https://github.com/mikf/gallery-dl), [ffmpeg](https://ffmpeg.org) and [deno](https://deno.com). They are installed separately and come with their own licenses.

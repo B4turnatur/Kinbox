@@ -9,6 +9,7 @@ Start:  python server.py         (oder start.bat)
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 import re
 import secrets
@@ -25,7 +26,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.10.1"
+APP_VERSION = "3.11.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -101,6 +102,10 @@ def ytdlp_base() -> list[str]:
     if cmd:
         return list(cmd)
     return [str(TOOLS_DIR / "yt-dlp.exe")] if FROZEN else [sys.executable, "-m", "yt_dlp"]
+
+
+def gallerydl_base() -> list[str]:
+    return [str(TOOLS_DIR / "gallery-dl.exe")] if FROZEN else [sys.executable, "-m", "gallery_dl"]
 
 
 def download_root() -> Path:
@@ -598,6 +603,8 @@ def _run_job(job: Job):
     except OptionError as e:
         job.status, job.error, job.stage = "error", str(e), "Fehler"
         return
+    if job.options.get("mode") != "audio" and is_photo_post(job.url):
+        return run_photos(job, job_dir)
     cmd = ytdlp_base() + args
     job.log.append("$ " + " ".join(cmd))
 
@@ -687,6 +694,8 @@ def _run_job(job: Job):
                 lib_add(f, job.file_meta.get(f) or job.meta, job)
         if audio_err:
             job.status, job.error = "error", audio_err
+    elif job.options.get("mode") != "audio" and not job.files and photo_site(job.url):
+        run_photos(job, job_dir, last_error)     # yt-dlp kann nur Videos – vielleicht ein Foto-Beitrag
     else:
         job.status, job.stage = "error", "Fehler"
         job.error = last_error or f"yt-dlp beendet mit Code {rc}"
@@ -735,6 +744,126 @@ def kill_job(job: Job):
             os.killpg(p.pid, signal.SIGTERM)
     except Exception:
         p.kill()
+
+
+# --------------------------------------------------------------------------- #
+# Foto-Beiträge (Instagram-Bilder, TikTok-Slideshows …) – yt-dlp kann nur Videos, das macht gallery-dl
+# --------------------------------------------------------------------------- #
+
+PHOTO_SITES = ("instagram.com", "tiktok.com", "x.com", "twitter.com", "threads.net", "threads.com", "reddit.com",
+               "pinterest.com", "pin.it", "bsky.app", "imgur.com", "tumblr.com", "facebook.com")
+TIKTOK_SHORT = ("vm.tiktok.com", "vt.tiktok.com")
+
+
+def _host(url: str) -> str:
+    from urllib.parse import urlparse
+    return (urlparse(url).hostname or "").lower()
+
+
+def photo_site(url: str) -> bool:
+    h = _host(url)
+    return any(h == d or h.endswith("." + d) for d in PHOTO_SITES)
+
+
+def is_photo_post(url: str) -> bool:
+    """TikTok-Slideshows erkennt man am Link (/photo/); Kurzlinks dafür einmal auflösen."""
+    if "tiktok.com" not in _host(url):
+        return False
+    if _host(url) in TIKTOK_SHORT or "tiktok.com/t/" in url:
+        import urllib.request
+        try:
+            req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                url = r.geturl()
+        except Exception:
+            return False           # dann probiert es yt-dlp, danach notfalls gallery-dl
+    return "/photo/" in url
+
+
+def ensure_gallerydl():
+    """Ältere Installationen (z. B. Docker nach Selbstupdate) haben gallery-dl noch nicht – einmal nachinstallieren."""
+    import importlib.util
+    if FROZEN or importlib.util.find_spec("gallery_dl"):
+        return
+    with _update_lock:
+        if not importlib.util.find_spec("gallery_dl"):
+            subprocess.run([sys.executable, "-m", "pip", "install", "gallery-dl"], capture_output=True, timeout=300,
+                           **({"creationflags": 0x08000000} if IS_WINDOWS else {}))
+            importlib.invalidate_caches()
+    if not importlib.util.find_spec("gallery_dl"):
+        raise OptionError("gallery-dl fehlt – bitte „pip install gallery-dl“ ausführen")
+
+
+def _photo_meta(js: dict) -> dict:
+    def first(*keys):
+        return next((js[k].strip() for k in keys if isinstance(js.get(k), str) and js[k].strip()), "")
+    author = js.get("author") if isinstance(js.get("author"), dict) else {}
+    title = first("description", "desc", "title", "content", "caption")
+    return {"title": title.splitlines()[0][:100] if title else "",
+            "uploader": first("fullname", "username", "user", "author") or author.get("nickname") or ""}
+
+
+def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = ""):
+    out = download_root() / ".tmp" / job.id / "photos"
+    try:
+        ensure_gallerydl()
+        cmd = gallerydl_base() + cookie_args(out.parent) + ["--write-metadata", "-D", str(out), "--", job.url]
+    except OptionError as e:
+        job.status, job.stage, job.error = "error", "Fehler", str(e)
+        return
+    job.log.append("$ " + " ".join(cmd))
+    kw = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000} if IS_WINDOWS else {"start_new_session": True}
+    job.stage, job.percent = "Lädt Fotos", 0.0
+    try:
+        job.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                    env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}, **kw)
+    except OSError as e:
+        job.status, job.stage, job.error = "error", "Fehler", f"gallery-dl nicht gefunden: {e}"
+        return
+    last_error, n = "", 0
+    for raw in job.proc.stdout:
+        line = raw.decode("utf-8", "replace").rstrip("\r\n")
+        if not line:
+            continue
+        job.log.append(line)
+        if "[error]" in line:
+            last_error = line.split("[error]", 1)[1].strip()
+        elif not line.startswith("["):         # gallery-dl schreibt jede fertige Datei als Pfad
+            n += 1
+            job.stage = f"Lädt Fotos ({n})"
+    job.proc.wait()
+    if job.cancel_requested:
+        job.status, job.stage = "cancelled", "Abgebrochen"
+        return
+    media = sorted((f for f in out.glob("*") if f.is_file() and f.suffix.lower() != ".json"),
+                   key=lambda f: (kind_of(f.name) != "image", f.name)) if out.exists() else []
+    if not media:
+        job.status, job.stage = "error", "Fehler"
+        job.error = ytdlp_error or last_error or "Keine Fotos gefunden"
+        return
+    metas = []
+    for f in media:
+        try:
+            metas.append(_photo_meta(json.loads(f.with_name(f.name + ".json").read_text(encoding="utf-8"))))
+        except Exception:
+            metas.append({"title": "", "uploader": ""})
+    title = next((m["title"] for m in metas if m["title"]), "") or (job.title if job.title != job.url else "") \
+        or next((m["uploader"] for m in metas if m["uploader"]), "") or "Foto"
+    base = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", title)[:60].strip(" .") or "Foto"
+    job_dir.mkdir(parents=True, exist_ok=True)
+    n = sum(kind_of(f.name) == "image" for f in media)
+    for i, (f, m) in enumerate(zip(media, metas), 1):
+        num = n > 1 and i <= n          # Bilder durchnummerieren; Musik der Slideshow (TikTok) heißt wie der Beitrag
+        dst = unique_path(job_dir / (f"{base} {i:02d}{f.suffix}" if num else base + f.suffix))
+        shutil.move(str(f), dst)
+        job.files.append(str(dst))
+        job.file_meta[str(dst)] = {"title": f"{title} ({i}/{n})" if num else title,
+                                   "uploader": m["uploader"], "webpage_url": job.url}
+    if job.title == job.url:
+        job.title = title
+    job.status, job.stage, job.percent = "finished", "Fertig", 100.0
+    for f in job.files:
+        lib_add(f, job.file_meta[f], job)
 
 
 # --------------------------------------------------------------------------- #
@@ -1077,6 +1206,16 @@ def mark_pc_downloaded(path: str, by_user: str | None = None):
     lib_save()
 
 
+# Handys öffnen die Datei mit der App, die zum Typ passt – „application/octet-stream“ bot Wallet & Co. an
+MIME_EXTRA = {".webp": "image/webp", ".m4a": "audio/mp4", ".opus": "audio/ogg", ".aac": "audio/aac",
+              ".flac": "audio/flac", ".srt": "text/plain", ".vtt": "text/vtt"}
+
+
+def mime_of(path) -> str:
+    ext = Path(path).suffix.lower()
+    return MIME_EXTRA.get(ext) or mimetypes.guess_type("x" + ext)[0] or "application/octet-stream"
+
+
 def stream_download(path: Path, on_complete=None) -> Response:
     """Datei als Download senden; on_complete wird nur bei vollständiger Übertragung aufgerufen."""
     from urllib.parse import quote
@@ -1099,7 +1238,7 @@ def stream_download(path: Path, on_complete=None) -> Response:
         "Content-Length": str(size),
         "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(path.name)}",
     }
-    return Response(gen(), mimetype="application/octet-stream", headers=headers, direct_passthrough=True)
+    return Response(gen(), mimetype=mime_of(path), headers=headers, direct_passthrough=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -1817,6 +1956,8 @@ def info():
                                    and Path(e["path"]).exists() and (e.get("owner") == uid or e.get("shared"))]
         return jsonify(data)
     except OptionError as e:
+        if photo_site(url):    # Foto-Beiträge kennt yt-dlp nicht – der Download klappt trotzdem (gallery-dl)
+            return err(f"Kein Video gefunden – Foto-Beitrag? Einfach „Herunterladen“ drücken, Kinbox lädt dann die Bilder. ({e})", 422)
         return err(str(e), 422)
     except subprocess.TimeoutExpired:
         return err("Zeitüberschreitung beim Abrufen der Infos", 504)
@@ -2014,9 +2155,8 @@ def library_list():
 
 @app.get("/api/library/<eid>/stream")
 def library_stream(eid):
-    import mimetypes
     e = _entry(eid)
-    mt = mimetypes.guess_type(e["path"])[0] or "application/octet-stream"
+    mt = mime_of(e["path"])
     if e["path"].lower().endswith(".mkv"):
         mt = "video/webm"   # Chrome spielt die meisten MKV so ab
     return send_file(e["path"], mimetype=mt, conditional=True, max_age=0)
@@ -2141,12 +2281,14 @@ def update_ytdlp():
     if not _update_lock.acquire(blocking=False):
         return err("Update läuft bereits")
     try:
+        kw = {"creationflags": 0x08000000} if IS_WINDOWS else {}
         if SETTINGS.get("ytdlp_command") or FROZEN:
             cmd = ytdlp_base() + ["-U"]
         else:
-            cmd = [sys.executable, "-m", "pip", "install", "-U", "yt-dlp[default]"]
-        r = subprocess.run(cmd, capture_output=True, timeout=300,
-                           **({"creationflags": 0x08000000} if IS_WINDOWS else {}))
+            cmd = [sys.executable, "-m", "pip", "install", "-U", "yt-dlp[default]", "gallery-dl"]
+        r = subprocess.run(cmd, capture_output=True, timeout=300, **kw)
+        if FROZEN and (TOOLS_DIR / "gallery-dl.exe").exists():   # Foto-Beiträge
+            subprocess.run(gallerydl_base() + ["-U"], capture_output=True, timeout=300, **kw)
         _version_cache.clear()
         out = (r.stdout + r.stderr).decode("utf-8", "replace").strip().splitlines()[-6:]
         return jsonify(ok=r.returncode == 0, ytdlp=ytdlp_version(), output="\n".join(out))
@@ -2445,6 +2587,7 @@ TOOL_DOWNLOADS = {  # offizielle Quellen, jeweils neueste Version
     "yt-dlp.exe": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
     "ffmpeg.exe": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
     "deno.exe": "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip",
+    "gallery-dl.exe": "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl.exe",   # Foto-Beiträge
 }
 
 

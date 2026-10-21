@@ -86,7 +86,7 @@ Läuft auf deinem PC, keine Cloud, kein Konto. Nur dieser PC oder fürs ganze He
 
 1. Im [neuesten Release](https://github.com/B4turnatur/Kinbox/releases/latest) **`Kinbox.exe`** und **`Kinbox-Extension.zip`** herunterladen.
 2. `Kinbox.exe` in einen eigenen Ordner legen, z. B. `C:\Kinbox`, und doppelklicken. Windows warnt eventuell „Der Computer wurde durch Windows geschützt“. Dann auf **Weitere Informationen → Trotzdem ausführen** klicken. Die exe ist nicht signiert.
-3. Ein Einrichtungsfenster öffnet sich. **Nur auf diesem PC** oder **Server fürs Heimnetz** wählen und auf **Einrichten** klicken. Kinbox lädt yt-dlp, ffmpeg und deno herunter (ca. 150 MB) und legt sie in `tools\` ab. Beim Heimnetz die Nachfrage der Windows-Firewall mit „Zugriff zulassen“ bestätigen.
+3. Ein Einrichtungsfenster öffnet sich. **Nur auf diesem PC** oder **Server fürs Heimnetz** wählen und auf **Einrichten** klicken. Kinbox lädt yt-dlp, gallery-dl, ffmpeg und deno herunter (ca. 160 MB) und legt sie in `tools\` ab. Beim Heimnetz die Nachfrage der Windows-Firewall mit „Zugriff zulassen“ bestätigen.
 4. Das Fenster zeigt **Adresse** und **Token** für die Erweiterung an (mit Kopieren-Knopf). Kinbox startet ab jetzt bei der Anmeldung automatisch. Ein erneuter Doppelklick auf `Kinbox.exe` öffnet die Mediathek.
 
 <p align="center"><img src="docs/images/setup-de.png" alt="Kinbox-Einrichtungsfenster"></p>
@@ -99,7 +99,7 @@ yt-dlp aktualisierst du in den Einstellungen der Erweiterung mit „yt-dlp aktua
 
 1. Den Ordner `server` irgendwohin kopieren, z. B. `C:\Kinbox`.
 2. **Rechtsklick auf `install.bat` → „Als Administrator ausführen"**.
-   Installiert Python (falls nötig), yt-dlp, Flask, Waitress, ffmpeg und deno.
+   Installiert Python (falls nötig), yt-dlp, gallery-dl, Flask, Waitress, ffmpeg und deno.
    Falls Python neu installiert wurde, `install.bat` danach ein zweites Mal starten.
 3. Auswählen, wie du Kinbox nutzen willst:
    - **1 = Nur auf diesem PC (Standalone)** – für alle mit nur einem Computer. Kinbox läuft unsichtbar im Hintergrund, startet bei der Anmeldung und ist aus dem Netzwerk nicht erreichbar. Keine Admin-Rechte nötig. Der Installer zeigt den **Token** an. In der Erweiterung als Adresse `http://127.0.0.1:8765` eintragen. Die Desktop-Verknüpfung „Kinbox“ öffnet die Mediathek.
@@ -132,7 +132,7 @@ Die Mediathek unter `http://<NAS-IP>:8765/library` funktioniert wie gewohnt – 
 ### Linux / macOS
 
 ```bash
-pip install "yt-dlp[default]" flask waitress   # dazu ffmpeg und deno über den Paketmanager
+pip install "yt-dlp[default]" gallery-dl flask waitress   # dazu ffmpeg und deno über den Paketmanager
 python3 server/server.py
 ```
 
@@ -189,6 +189,7 @@ Jede Person hat ihren **eigenen Bereich**: eigener Ordner, eigene Mediathek, eig
 | **Umwandeln** | Als **GIF** oder **verkleinern** auf 8 MB (Discord), 15 MB (WhatsApp), 25 MB (E-Mail) … |
 | **Video + MP3** | Beides mit einem Download (Preset oder Schalter „Zusätzlich als Audio-Datei“) – z. B. MP4 für OBS und MP3 für Voicemod |
 | **Nachträglich bearbeiten** | In der Mediathek Datei öffnen → ✂ *Bearbeiten*: zuschneiden (mit „Jetzt“ aus dem Player), als Audio speichern / Format ändern, in MP4 umwandeln, GIF, verkleinern, Ton entfernen, drehen, Lautstärke angleichen. Das Ergebnis kommt als neue Datei dazu, das Original bleibt (außer „Original behalten“ ist aus). |
+| **Foto-Beiträge** | Instagram-Bilder und -Karussells, TikTok-Foto-Slideshows (samt Musik), X, Reddit & Co. – einfach „Herunterladen“ drücken, Kinbox nimmt dann von selbst [gallery-dl](https://github.com/mikf/gallery-dl). Instagram braucht meist Cookies (siehe unten). |
 | **Musik-Modus** | Interpret und Titel werden sauber aus „Interpret – Titel" gelesen, Cover quadratisch zugeschnitten |
 | **Ordnerstruktur** | Alles in einen Ordner, nach Kanal, **Plex/Jellyfin** (Kanal › Season Jahr › Folge) oder Musik (Interpret › Titel) |
 | **Nachts laden** | 🌙-Schalter: Download startet erst im Nachtfenster (Standard 01:00–07:00) |
@@ -264,4 +265,4 @@ Lade nur Inhalte herunter, die du herunterladen darfst; beachte die Nutzungsbedi
 
 ## Lizenz
 
-[MIT](LICENSE). Kinbox nutzt [yt-dlp](https://github.com/yt-dlp/yt-dlp), [ffmpeg](https://ffmpeg.org) und [deno](https://deno.com) – diese werden getrennt installiert und haben eigene Lizenzen.
+[MIT](LICENSE). Kinbox nutzt [yt-dlp](https://github.com/yt-dlp/yt-dlp), [gallery-dl](https://github.com/mikf/gallery-dl), [ffmpeg](https://ffmpeg.org) und [deno](https://deno.com) – diese werden getrennt installiert und haben eigene Lizenzen.

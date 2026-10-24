@@ -25,6 +25,7 @@ export const DEFAULT_OPTIONS = {
   subfolder: "",
   saveToPc: false,
   musicTags: false,         // Interpret/Titel sauber + quadratisches Cover
+  musicOnly: false,         // TikTok: reine Musikspur statt Originalton
   organize: "flat",         // flat | channel | plex | music
   alsoAudio: false,         // Video-Modus: zusätzlich Audiodatei (audioFormat) daneben legen
   convert: { type: "none", gifFps: 12, gifWidth: 480, targetMB: 15, keepOriginal: false },

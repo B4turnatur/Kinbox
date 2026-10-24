@@ -29,7 +29,8 @@
     "25 (flüssig)": "25 (smooth)", "Tipp: vorher zuschneiden – GIFs gehen bis 90 Sekunden.": "Tip: trim first – GIFs can be up to 90 seconds.",
     "25 MB · E-Mail": "25 MB · Email", "Original zusätzlich behalten": "Also keep the original", "VBR beste": "VBR best",
     "Musik-Modus: Interpret & Titel sauber, quadratisches Cover": "Music mode: clean artist & title, square cover",
-    "Lautstärke angleichen (loudnorm)": "Normalize volume (loudnorm)", "Vorschaubild speichern als": "Save thumbnail as", "Zuschneiden": "Trim",
+    "Lautstärke angleichen (loudnorm)": "Normalize volume (loudnorm)", "TikTok: nur die Musik (ohne Stimme)": "TikTok: music only (no voice)", "nur Musik": "music only",
+    "Auf einer Profilseite (Instagram, TikTok) wird das Profilbild gespeichert.": "On a profile page (Instagram, TikTok) the profile picture is saved.", "Vorschaubild speichern als": "Save thumbnail as", "Zuschneiden": "Trim",
     "ganzes Video": "whole video", "Aktuelle Position im Video übernehmen": "Use the current position in the video", "jetzt": "now",
     "Framegenau schneiden (etwas langsamer)": "Frame-accurate cut (a bit slower)", "Beim Ziehen im Video mitspringen": "Seek the video while dragging",
     "Kapitel": "Chapters", "Jedes Kapitel als eigene Datei": "Each chapter as its own file", "Playlist": "Playlist", "nur dieses Video": "only this video",
@@ -207,7 +208,8 @@
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
-    ["Audio-Datei: {0}", "Audio file: {0}"],
+    ["Audio-Datei: {0}", "Audio file: {0}"], ["Profilbild {0}", "Profile picture {0}"],
+    ["{0} – Instagram-Profilbilder gehen nur mit Instagram-Cookies", "{0} – Instagram profile pictures only work with Instagram cookies"],
     ["Eingerichtet für: {0}", "Set up for: {0}"],
     ["Aufs Handy ({0})", "To phone ({0})"], ["Lädt herunter ({0})", "Downloading ({0})"], ["Lädt Fotos ({0})", "Downloading photos ({0})"], ["gallery-dl nicht gefunden: {0}", "gallery-dl not found: {0}"],
     ["Kein Video gefunden – Foto-Beitrag? Einfach „Herunterladen“ drücken, Kinbox lädt dann die Bilder. ({0})", "No video found – a photo post? Just press “Download”, Kinbox will fetch the images. ({0})"], ["Interner Fehler: {0}", "Internal error: {0}"], ["yt-dlp beendet mit Code {0}", "yt-dlp exited with code {0}"],

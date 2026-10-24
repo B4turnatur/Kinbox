@@ -26,7 +26,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.12.1"
+APP_VERSION = "3.13.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -168,6 +168,8 @@ def build_args(opts: dict, job_dir: Path, temp_dir: Path | None = None, archive_
     mode = opts.get("mode", "video")
     # TikTok bietet zusätzlich die reine Musik als Tonspur an – "ba" würde sie nehmen und Stimme/Originalton verlieren
     ba = "ba[format_id!=audio]" if "tiktok.com" in _host(url) else "ba"
+    if ba != "ba" and opts.get("musicOnly"):
+        ba = "audio"   # Nutzer will genau diese Musikspur (ohne Stimme)
     a: list[str] = [
         "--newline", "--progress", "--no-colors", "--no-simulate", "--ignore-config",
         "--windows-filenames", "--no-part" if opts.get("noPart") else "--part",
@@ -605,6 +607,8 @@ def _run_job(job: Job):
     except OptionError as e:
         job.status, job.error, job.stage = "error", str(e), "Fehler"
         return
+    if job.options.get("mode") == "thumbnail" and (avatar := avatar_url(job.url)):
+        return run_photos(job, job_dir, url=avatar)
     if job.options.get("mode") != "audio" and is_photo_post(job.url):
         return run_photos(job, job_dir)
     cmd = ytdlp_base() + args
@@ -782,6 +786,21 @@ def is_photo_post(url: str) -> bool:
     return "/photo/" in url
 
 
+def avatar_url(url: str) -> str:
+    """Profilseite (Instagram/TikTok) → gallery-dl-Link fürs Profilbild, sonst ""."""
+    from urllib.parse import urlparse
+    h, path = _host(url), urlparse(url).path
+    if h == "tiktok.com" or h.endswith(".tiktok.com"):
+        m = re.fullmatch(r"/(@[\w.-]+)/?", path)
+    elif h == "instagram.com" or h.endswith(".instagram.com"):
+        m = re.fullmatch(r"/([\w.]+)/?", path)
+        if m and m[1] in ("p", "reel", "reels", "tv", "stories", "explore", "accounts", "direct"):
+            m = None
+    else:
+        m = None
+    return f"https://www.{h.split('.')[-2]}.com/{m[1]}/avatar" if m else ""
+
+
 def ensure_gallerydl():
     """Ältere Installationen (z. B. Docker nach Selbstupdate) haben gallery-dl noch nicht – einmal nachinstallieren."""
     import importlib.util
@@ -801,15 +820,17 @@ def _photo_meta(js: dict) -> dict:
         return next((js[k].strip() for k in keys if isinstance(js.get(k), str) and js[k].strip()), "")
     author = js.get("author") if isinstance(js.get("author"), dict) else {}
     title = first("description", "desc", "title", "content", "caption")
-    return {"title": title.splitlines()[0][:100] if title else "",
-            "uploader": first("fullname", "username", "user", "author") or author.get("nickname") or ""}
+    uploader = first("fullname", "nickname", "username", "user", "author") or author.get("nickname") or ""
+    if js.get("subcategory") == "avatar":
+        title = f"Profilbild {uploader}".strip()
+    return {"title": title.splitlines()[0][:100] if title else "", "uploader": uploader}
 
 
-def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = ""):
+def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = ""):
     out = download_root() / ".tmp" / job.id / "photos"
     try:
         ensure_gallerydl()
-        cmd = gallerydl_base() + cookie_args(out.parent) + ["--write-metadata", "-D", str(out), "--", job.url]
+        cmd = gallerydl_base() + cookie_args(out.parent) + ["--write-metadata", "-D", str(out), "--", url or job.url]
     except OptionError as e:
         job.status, job.stage, job.error = "error", "Fehler", str(e)
         return
@@ -842,6 +863,8 @@ def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = ""):
     if not media:
         job.status, job.stage = "error", "Fehler"
         job.error = ytdlp_error or last_error or "Keine Fotos gefunden"
+        if url and "instagram" in url:
+            job.error += " – Instagram-Profilbilder gehen nur mit Instagram-Cookies"
         return
     metas = []
     for f in media:

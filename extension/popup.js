@@ -179,6 +179,7 @@ function summaries() {
   if (opts.mode === "video" && opts.convert?.type === "gif") parts.push("→ GIF");
   if (opts.mode === "video" && opts.convert?.type === "small") parts.push(`→ max. ${opts.convert.targetMB} MB`);
   if (opts.mode === "audio" && opts.musicTags) parts.push("Musik-Tags");
+  if (opts.mode === "audio" && opts.musicOnly) parts.push("nur Musik");
   if (opts.when === "night") parts.push("nachts");
   if (playlistMode !== "single") parts.push("Playlist");
   $("#goSummary").textContent = parts.map(t).join(" · ");

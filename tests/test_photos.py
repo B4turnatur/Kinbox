@@ -13,6 +13,15 @@ assert server.mime_of("a.mp3") == "audio/mpeg" and server.mime_of("a.xyz") == "a
 assert server.photo_site("https://www.instagram.com/p/x/") and not server.photo_site("https://youtube.com/watch?v=1")
 assert server.is_photo_post("https://www.tiktok.com/@a/photo/123") and not server.is_photo_post("https://www.tiktok.com/@a/video/1")
 assert not server.is_photo_post("https://www.instagram.com/p/x/")    # Instagram: erst yt-dlp, dann Ersatz
+# Profilbilder: nur echte Profilseiten
+assert server.avatar_url("https://www.tiktok.com/@nasa?lang=de") == "https://www.tiktok.com/@nasa/avatar"
+assert server.avatar_url("https://m.instagram.com/nasa/") == "https://www.instagram.com/nasa/avatar"
+assert not server.avatar_url("https://www.tiktok.com/@nasa/video/1") and not server.avatar_url("https://www.instagram.com/reels/")
+assert not server.avatar_url("https://www.instagram.com/p/x/") and not server.avatar_url("https://youtube.com/@nasa")
+# TikTok: Originalton als Standard, auf Wunsch nur die Musikspur
+_a = lambda **o: server.build_args({"url": "https://www.tiktok.com/@a/video/1", "mode": "audio", **o}, Path("."))
+assert "ba[format_id!=audio]/b" in _a() and "audio/b" in _a(musicOnly=True)
+assert "ba/b" in server.build_args({"url": "https://youtu.be/x", "mode": "audio", "musicOnly": True}, Path("."))
 
 FAKE = r'''
 import json, sys, pathlib

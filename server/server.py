@@ -26,7 +26,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.14.0"
+APP_VERSION = "3.14.1"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -2772,7 +2772,7 @@ TOOL_DOWNLOADS = {  # offizielle Quellen, jeweils neueste Version
     "yt-dlp.exe": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
     "ffmpeg.exe": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
     "deno.exe": "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip",
-    "gallery-dl.exe": "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl.exe",   # Foto-Beiträge
+    "gallery-dl.exe": "https://codeberg.org/mikf/gallery-dl/releases/download/latest/gallery-dl.exe",   # Foto-Beiträge (seit 1.32 nur noch auf Codeberg)
 }
 
 
@@ -3031,9 +3031,8 @@ def exe_start() -> None:
         return setup_gui()
     try:
         ensure_tools()
-    except Exception as e:
+    except Exception as e:  # trotzdem starten – sonst ist Kinbox ganz weg, wenn ein Tool nicht ladbar ist
         print(f" [!] Download fehlgeschlagen: {e}")
-        return
     main()
 
 

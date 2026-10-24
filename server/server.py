@@ -26,7 +26,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.13.0"
+APP_VERSION = "3.14.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -2205,12 +2205,16 @@ def _entry(eid, write=False) -> dict:
 
 @app.get("/api/library")
 def library_list():
-    """scope: mine (Standard) · family (geteilte von allen) · all (nur Admin)"""
+    """scope: mine (Standard) · family (geteilte von allen) · all (nur Admin) · favs · coll:<id> (eigene Sammlung)"""
     scope = request.args.get("scope", "mine")
     uid = me()["id"]
     with LIB_LOCK:
         items = [e for e in LIB.values() if Path(e["path"]).exists()]
-        if scope == "family":
+        if scope == "favs" or scope.startswith("coll:"):
+            c = _coll(scope[5:]) if scope != "favs" else None
+            ids = set(c["items"] if c else me().get("favs") or [])
+            items = [e for e in items if e["id"] in ids and _readable(e)]
+        elif scope == "family":
             items = [e for e in items if e.get("shared")]
         elif scope == "all" and is_admin():
             owner = request.args.get("owner")
@@ -2221,7 +2225,8 @@ def library_list():
         u = me()
         return jsonify(items=[lib_public(e) for e in items], stats=lib_stats(uid), user=user_public(u, private=True),
                        is_admin=is_admin(), usage=user_usage(uid), quota_gb=u.get("quota_gb", 0),
-                       cleanup=u.get("cleanup"), cleanup_log=_my_log(20),
+                       cleanup=u.get("cleanup"), cleanup_log=_my_log(20), favs=[i for i in u.get("favs") or [] if i in LIB],
+                       collections=[{**c, "items": [i for i in c["items"] if i in LIB]} for c in u.get("collections") or []],
                        family_count=sum(1 for e in LIB.values() if e.get("shared") and Path(e["path"]).exists()))
 
 
@@ -2269,6 +2274,105 @@ def library_share(eid):
         e["shared"] = bool(body.get("shared", not e.get("shared")))
     lib_save()
     return jsonify(lib_public(e))
+
+
+@app.post("/api/library/<eid>/rename")
+def library_rename(eid):
+    """Titel ändern, auf Wunsch auch den Dateinamen (bleibt im selben Ordner)."""
+    e = _entry(eid, write=True)
+    body = request.get_json(silent=True) or {}
+    title = str(body.get("title") or "").strip()[:200]
+    if not title:
+        return err("Bitte einen Namen eingeben")
+    with LIB_LOCK:
+        if body.get("file"):
+            old = Path(e["path"])
+            base = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", title)[:120].strip(" .") or "Datei"
+            new = old.with_name(base + old.suffix)
+            if new != old:
+                new = unique_path(new)
+                try:
+                    os.replace(old, new)
+                except OSError:
+                    return err("Datei konnte nicht umbenannt werden (wird sie gerade benutzt?)", 409)
+                e["path"], e["name"] = str(new), new.name
+        e["title"] = title
+    lib_save()
+    return jsonify(lib_public(e))
+
+
+# ---- Favoriten & Sammlungen: pro Person (users.json), auch für geteilte Einträge anderer
+def _readable(e: dict) -> bool:
+    return e.get("owner") == me()["id"] or bool(e.get("shared")) or is_admin()
+
+
+def _coll(cid: str) -> dict | None:
+    return next((c for c in me().get("collections") or [] if c["id"] == cid), None)
+
+
+def _readable_ids(ids) -> list[str]:
+    if not isinstance(ids, list):
+        return []
+    with LIB_LOCK:
+        return [i for i in dict.fromkeys(x for x in ids if isinstance(x, str)) if i in LIB and _readable(LIB[i])]
+
+
+@app.post("/api/library/favs")
+def library_favs():
+    """{add: [ids], remove: [ids]}"""
+    body = request.get_json(silent=True) or {}
+    add = _readable_ids(body.get("add") or [])
+    with USERS_LOCK:
+        u = me()
+        rm = {x for x in body.get("remove") or [] if isinstance(x, str)}
+        favs = [i for i in u.get("favs") or [] if i not in rm]
+        favs += [i for i in add if i not in favs]
+        u["favs"] = favs
+        users_save()
+    return jsonify(favs=favs)
+
+
+@app.post("/api/collections")
+def collection_new():
+    name = str((request.get_json(silent=True) or {}).get("name") or "").strip()[:60]
+    if not name:
+        return err("Bitte einen Namen eingeben")
+    with USERS_LOCK:
+        cols = me().setdefault("collections", [])
+        if len(cols) >= 100:
+            return err("Zu viele Sammlungen")
+        c = {"id": uuid.uuid4().hex[:8], "name": name, "items": []}
+        cols.append(c)
+        users_save()
+    return jsonify(c), 201
+
+
+@app.post("/api/collections/<cid>")
+def collection_update(cid):
+    """{name?, add?: [ids], remove?: [ids]}"""
+    body = request.get_json(silent=True) or {}
+    add = _readable_ids(body.get("add") or [])
+    with USERS_LOCK:
+        c = _coll(cid)
+        if not c:
+            abort(404)
+        if str(body.get("name") or "").strip():
+            c["name"] = str(body["name"]).strip()[:60]
+        rm = {x for x in body.get("remove") or [] if isinstance(x, str)}
+        c["items"] = [i for i in c["items"] if i not in rm]
+        c["items"] += [i for i in add if i not in c["items"]]
+        users_save()
+    return jsonify(c)
+
+
+@app.delete("/api/collections/<cid>")
+def collection_delete(cid):
+    """Nur die Sammlung – die Dateien bleiben."""
+    with USERS_LOCK:
+        u = me()
+        u["collections"] = [c for c in u.get("collections") or [] if c["id"] != cid]
+        users_save()
+    return jsonify(ok=True)
 
 
 @app.post("/api/library/<eid>/edit")

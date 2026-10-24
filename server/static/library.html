@@ -201,6 +201,35 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
 [data-style=mono] .btn.primary { color: var(--bg); text-transform: uppercase; letter-spacing: .06em; font-size: 13px; }
 [data-style=mono] .scopes button.active { box-shadow: inset 0 0 0 1px var(--accent); }
 [data-style=mono] .chip.active, [data-style=mono] .tabs2 button.active { color: var(--accent); }
+
+/* ---- Organisieren: Sammlungen, Favoriten, Mehrfachauswahl */
+.colls { flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.colls .chip, .selbar .btn { flex: none; white-space: nowrap; }
+.colls .chip { display: inline-flex; gap: 5px; align-items: center; }
+.colls .chip em { font-style: normal; color: var(--muted); font-size: 11px; }
+.colls .chip.ghost { background: none; border-style: dashed; color: var(--muted); }
+.colls .i, .favmark .i { width: 14px; height: 14px; }
+.favmark { color: #f5a524; margin-right: 3px; vertical-align: -2px; }
+.favmark .i { fill: currentColor; }
+.tick { position: absolute; top: 6px; left: 6px; width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; background: rgba(0,0,0,.45); display: grid; place-items: center; color: #fff; z-index: 1; }
+.tick .i { width: 14px; height: 14px; visibility: hidden; }
+.card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.card.sel .tick { background: var(--accent); border-color: var(--accent); }
+.card.sel .tick .i { visibility: visible; }
+.selecting .card:hover { transform: none; }
+.selbar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 20; width: min(900px, calc(100vw - 20px)); background: var(--bg2); border: 1px solid var(--accent); border-radius: min(14px, var(--round)); padding: 8px 10px; display: flex; gap: 6px; overflow-x: auto; align-items: center; box-shadow: 0 14px 40px rgba(0,0,0,.45); }
+.selbar b { order: -2; padding: 0 6px; flex: none; white-space: nowrap; }
+.selecting main { padding-bottom: 80px; }
+.coll-list { display: flex; flex-direction: column; gap: 6px; }
+.coll-list button { text-align: left; justify-content: space-between; width: 100%; }
+.coll-list button .i:last-child { visibility: hidden; }
+.coll-list button.on { border-color: var(--accent); background: var(--accent-bg); }
+.coll-list button.on .i:last-child { visibility: visible; }
+.coll-list button.part .i:last-child { visibility: visible; opacity: .4; }
+.selbar [data-bulk=done] { order: 9; margin-left: auto; }
+@media (max-width: 600px) { .selbar [data-bulk=done] { order: -1; } }
+.selbar .btn:disabled { opacity: .45; cursor: default; }
+.renamebox { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -243,6 +272,8 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
     <select id="sort">
       <option value="new">Neueste</option><option value="old">Älteste</option><option value="big">Größte</option><option value="name">Name</option>
     </select>
+    <button class="btn" id="selBtn"><svg class="i"><use href="/static/icons.svg#check"/></svg> Auswählen</button>
+    <div class="chips colls" id="colls"></div>
   </div>
 </header>
 
@@ -252,6 +283,29 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" hidden></div>
 </main>
+
+<div class="selbar" id="selBar" hidden>
+  <b id="selCount"></b>
+  <button class="btn primary" data-bulk="done">Fertig</button>
+  <button class="btn" data-bulk="all">Alle</button>
+  <button class="btn" data-bulk="fav"><svg class="i"><use href="/static/icons.svg#star"/></svg> Favorit</button>
+  <button class="btn" data-bulk="coll"><svg class="i"><use href="/static/icons.svg#folder"/></svg> Zur Sammlung</button>
+  <button class="btn" data-bulk="uncoll" id="selUncoll"><svg class="i"><use href="/static/icons.svg#x"/></svg> Aus Sammlung</button>
+  <button class="btn" data-bulk="pin"><svg class="i"><use href="/static/icons.svg#pin"/></svg> Behalten</button>
+  <button class="btn" data-bulk="share"><svg class="i"><use href="/static/icons.svg#users"/></svg> Teilen</button>
+  <button class="btn" data-bulk="dl"><svg class="i"><use href="/static/icons.svg#download"/></svg> Aufs Gerät</button>
+  <button class="btn danger" data-bulk="del"><svg class="i"><use href="/static/icons.svg#trash"/></svg> Löschen</button>
+</div>
+
+<!-- ============ Zur Sammlung (ein Eintrag oder Auswahl) ============ -->
+<dialog id="collDlg" style="width:min(420px,96vw)">
+  <div class="form">
+    <h2>Zur Sammlung</h2>
+    <div class="coll-list" id="collList"></div>
+    <form class="copy" id="collNew"><input id="collName" style="font:inherit" placeholder="Neue Sammlung, z. B. Kinderlieder" maxlength="60"><button class="btn"><svg class="i"><use href="/static/icons.svg#plus"/></svg></button></form>
+    <button class="btn primary" id="collDone">Fertig</button>
+  </div>
+</dialog>
 
 <!-- ============ Player ============ -->
 <dialog id="playerDlg">
@@ -264,10 +318,18 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
       <a class="btn primary" id="pDownload"><svg class="i"><use href="/static/icons.svg#download"/></svg> Auf dieses Gerät</a>
       <button class="btn" id="pShare"></button>
       <button class="btn" id="pPin"></button>
+      <button class="btn" id="pFav"></button>
+      <button class="btn" id="pColl"><svg class="i"><use href="/static/icons.svg#folder"/></svg> Zur Sammlung</button>
+      <button class="btn" id="pRename"><svg class="i"><use href="/static/icons.svg#pencil"/></svg> Umbenennen</button>
       <a class="btn" id="pSource" target="_blank" rel="noopener"><svg class="i"><use href="/static/icons.svg#external"/></svg> Original</a>
       <button class="btn" id="pEdit"><svg class="i"><use href="/static/icons.svg#scissors"/></svg> Bearbeiten</button>
       <button class="btn danger" id="pDelete">Löschen</button>
     </div>
+    <form class="renamebox" id="renameBox" hidden>
+      <input id="rTitle" maxlength="200" aria-label="Neuer Name">
+      <label class="switch"><input type="checkbox" id="rFile"><span></span>Dateiname auch ändern</label>
+      <button class="btn primary">Speichern</button>
+    </form>
     <div class="editbox" id="editBox" hidden>
       <div class="chips" id="editOps">
         <button class="chip" data-op="cut" data-k="video audio">Zuschneiden</button>
@@ -517,12 +579,16 @@ async function login(p) {
 
 // ---- Bibliothek ---------------------------------------------------------
 let items = [], kind = "", data = null, scope = "mine";
+let favs = new Set(), colls = [], sel = null;   // sel: Set der ausgewählten Karten (Mehrfachauswahl), sonst null
 async function load() {
   if (!token) return showPicker();
-  try { data = await api(`/api/library?scope=${scope}&owner=${encodeURIComponent($("#ownerFilter").value)}`); } catch (e) { return; }
+  try { data = await api(`/api/library?scope=${encodeURIComponent(scope)}&owner=${encodeURIComponent($("#ownerFilter").value)}`); } catch (e) { return; }
   me = data.user; isAdmin = data.is_admin;
   applyLook(me.look);
   items = data.items;
+  favs = new Set(data.favs || []); colls = data.collections || [];
+  if (scope.startsWith("coll:") && !colls.some((c) => "coll:" + c.id === scope)) { scope = "mine"; return load(); }
+  drawColls();
   $("#whoAv").outerHTML = `<span class="av" id="whoAv" style="--c:${esc(me.color)}">${esc(me.avatar)}</span>`;
   $("#whoName").textContent = me.name;
   $("#scopeAll").hidden = !isAdmin;
@@ -566,6 +632,8 @@ function render() {
   for (const e of list) if (e.album) (groups[e.album] ||= []).push(e);
   list = list.filter((e) => !e.album || groups[e.album].length < 2 || (!seen.has(e.album) && seen.add(e.album)));
   $("#empty").innerHTML = items.length ? "Nichts gefunden."
+    : scope === "favs" ? "Noch keine Favoriten.<br>Öffne eine Datei und tippe auf „Favorit“."
+    : scope.startsWith("coll:") ? "Diese Sammlung ist noch leer.<br>Öffne eine Datei und tippe auf „Zur Sammlung“ – oder wähle mehrere mit „Auswählen“."
     : scope === "family" ? "Noch nichts geteilt.<br>Öffne eine deiner Dateien und tippe auf „Mit Familie teilen“."
     : "Noch nichts heruntergeladen.<br>Tippe auf „＋ Link“ oder nutze die Browser-Erweiterung.";
   $("#grid").innerHTML = list.map((e) => {
@@ -574,16 +642,19 @@ function render() {
     const icon = !bg ? ic(e.kind === "audio" ? "music" : e.kind === "video" ? "play" : "file") : "";
     const mine = e.owner === me.id;
     const warn = e.delete_at ? `<div class="warn">Wird gleich gelöscht</div>` : "";
-    return `<div class="card" data-id="${e.id}">
-      <div class="thumb" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${icon}
-        <span class="kind">${KIND[e.kind] || "Datei"}</span>${e.pinned ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
+    return `<div class="card${sel?.has(e.id) ? " sel" : ""}" data-id="${e.id}">
+      <div class="thumb" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${icon}${sel ? tick : ""}
+        <span class="kind"${sel ? " hidden" : ""}>${KIND[e.kind] || "Datei"}</span>${e.pinned ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
         ${e.shared && mine ? `<span class="shr" title="Mit der Familie geteilt">${ic("users")}</span>` : ""}
         ${!mine ? `<span class="av owner" title="${esc(e.owner_name)}">${esc(e.owner_avatar)}</span>` : ""}
         ${e.duration ? `<span class="badge">${fmtDur(e.duration)}</span>` : ""}</div>
-      <div class="info"><div class="title">${esc(e.title)}</div>
+      <div class="info"><div class="title">${favs.has(e.id) ? favMark : ""}${esc(e.title)}</div>
         <div class="meta">${esc([!mine ? e.owner_name : e.uploader, fmtBytes(e.size), ago(e.added)].filter(Boolean).join(" · "))}</div>${warn}</div></div>`;
   }).join("");
+  drawSel();
 }
+const tick = `<span class="tick">${ic("check")}</span>`;
+const favMark = `<span class="favmark" title="Favorit">${ic("star")}</span>`;
 $("#q").addEventListener("input", render);
 $("#sort").addEventListener("change", render);
 $("#kinds").addEventListener("click", (e) => {
@@ -606,6 +677,7 @@ $("#ownerFilter").addEventListener("change", load);
 let current = null;
 $("#grid").addEventListener("click", (e) => {
   const c = e.target.closest(".card"); if (!c) return;
+  if (sel) { const k = c.dataset.album ? "a:" + c.dataset.album : c.dataset.id; sel.has(k) ? sel.delete(k) : sel.add(k); return render(); }
   if (c.dataset.album) openAlbum(c.dataset.album); else openPlayer(items.find((x) => x.id === c.dataset.id));
 });
 
@@ -616,9 +688,9 @@ const albumTitle = (e) => e.title.replace(/ \(\d+\/\d+\)$/, "");
 function albumCard(e) {
   const all = albumItems(e.album), cover = all.find((x) => x.kind === "image") || all[0], mine = e.owner === me.id;
   const imgs = all.filter((x) => x.kind === "image").length, size = all.reduce((n, x) => n + (x.size || 0), 0);
-  return `<div class="card" data-album="${esc(e.album)}">
-    <div class="thumb" style="background-image:url('${esc(thumbOf(cover))}')">
-      <span class="kind">Album</span>${all.some((x) => x.pinned) ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
+  return `<div class="card${sel?.has("a:" + e.album) ? " sel" : ""}" data-album="${esc(e.album)}">
+    <div class="thumb" style="background-image:url('${esc(thumbOf(cover))}')">${sel ? tick : ""}
+      <span class="kind"${sel ? " hidden" : ""}>Album</span>${all.some((x) => x.pinned) ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
       ${e.shared && mine ? `<span class="shr" title="Mit der Familie geteilt">${ic("users")}</span>` : ""}
       ${!mine ? `<span class="av owner" title="${esc(e.owner_name)}">${esc(e.owner_avatar)}</span>` : ""}
       <span class="badge">${ic("image")} ${imgs}${all.length > imgs ? ` + ${ic("music")}` : ""}</span></div>
@@ -671,7 +743,9 @@ function openPlayer(e) {
   $("#pShare").hidden = !mine;
   drawShare();
   $("#pPin").hidden = !canEdit;
-  drawPin();
+  drawPin(); drawFav();
+  $("#pRename").hidden = !canEdit;
+  $("#renameBox").hidden = true;
   $("#pDelete").hidden = !canEdit;
   $("#pDelete").textContent = "Löschen"; delete $("#pDelete").dataset.sure;
   $("#pEdit").hidden = !canEdit || !["video", "audio"].includes(e.kind);
@@ -681,6 +755,7 @@ function openPlayer(e) {
 }
 function drawShare() { $("#pShare").innerHTML = ic(current.shared ? "check" : "users") + " " + (current.shared ? "Geteilt" : "Mit Familie teilen"); }
 function drawPin() { $("#pPin").innerHTML = ic("pin") + " " + (current.pinned ? "Behalten (an)" : "Behalten"); }
+function drawFav() { const on = favs.has(current.id); $("#pFav").innerHTML = (on ? favMark : ic("star") + " ") + (on ? "Favorit (an)" : "Favorit"); }
 function closePlayer() { $("#media").innerHTML = ""; $("#playerDlg").close(); }
 $("#closePlayer").addEventListener("click", closePlayer);
 $("#playerDlg").addEventListener("close", () => { $("#media").innerHTML = ""; });
@@ -702,6 +777,120 @@ $("#pDelete").addEventListener("click", async () => {
   try { await api(`/api/library/${current.id}`, { method: "DELETE" }); closePlayer(); toast("Gelöscht"); load(); } catch (e) { toast(e.message, true); }
 });
 $("#pDownload").addEventListener("click", () => setTimeout(load, 70000));
+$("#pFav").addEventListener("click", async () => {
+  const on = !favs.has(current.id);
+  try { await setFav([current.id], on); drawFav(); toast(on ? "Zu den Favoriten hinzugefügt" : "Aus den Favoriten entfernt"); } catch (e) { toast(e.message, true); }
+});
+$("#pColl").addEventListener("click", () => openColl([current.id]));
+$("#pRename").addEventListener("click", () => {
+  const b = $("#renameBox"); b.hidden = !b.hidden;
+  if (!b.hidden) { $("#rTitle").value = current.title; $("#rFile").checked = false; $("#rTitle").focus(); }
+});
+$("#renameBox").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  try { const r = await api(`/api/library/${current.id}/rename`, { method: "POST", body: JSON.stringify({ title: $("#rTitle").value, file: $("#rFile").checked }) });
+    Object.assign(current, r); $("#pTitle").textContent = r.title; $("#renameBox").hidden = true; toast("Umbenannt"); load();
+  } catch (e) { toast(e.message, true); }
+});
+
+// ---- Organisieren: Favoriten, Sammlungen, Mehrfachauswahl -----------------
+async function setFav(ids, on) {
+  const r = await api("/api/library/favs", { method: "POST", body: JSON.stringify(on ? { add: ids } : { remove: ids }) });
+  favs = new Set(r.favs); drawColls(); scope === "favs" ? load() : render();
+}
+function drawColls() {
+  const cur = colls.find((c) => "coll:" + c.id === scope);
+  $("#colls").innerHTML = `<button class="chip${scope === "favs" ? " active" : ""}" data-c="favs">${ic("star")} Favoriten <em>${favs.size || ""}</em></button>`
+    + colls.map((c) => `<button class="chip${c === cur ? " active" : ""}" data-c="coll:${esc(c.id)}">${ic("folder")} ${esc(c.name)} <em>${c.items.length || ""}</em></button>`).join("")
+    + `<button class="chip ghost" data-c="new">${ic("plus")} Sammlung</button>`
+    + (cur ? `<button class="chip ghost" data-c="ren" title="Sammlung umbenennen">${ic("pencil")}</button><button class="chip ghost" data-c="del" title="Sammlung löschen (Dateien bleiben)">${ic("trash")}</button>` : "");
+}
+$("#colls").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-c]"); if (!b) return;
+  const c = b.dataset.c, cur = colls.find((x) => "coll:" + x.id === scope);
+  try {
+    if (c === "new") {
+      const name = prompt(t("Name der neuen Sammlung:"))?.trim(); if (!name) return;
+      const n = await api("/api/collections", { method: "POST", body: JSON.stringify({ name }) });
+      scope = "coll:" + n.id; load();
+    } else if (c === "ren") {
+      const name = prompt(t("Neuer Name:"), cur.name)?.trim(); if (!name) return;
+      await api(`/api/collections/${cur.id}`, { method: "POST", body: JSON.stringify({ name }) }); load();
+    } else if (c === "del") {
+      if (!confirm(t(`Sammlung „${cur.name}“ löschen? Die Dateien bleiben erhalten.`))) return;
+      await api(`/api/collections/${cur.id}`, { method: "DELETE" }); scope = "mine"; load();
+    } else { scope = scope === c ? "mine" : c; load(); }
+  } catch (err) { toast(err.message, true); }
+});
+
+// Mehrfachauswahl: Karten antippen, dann eine Aktion für alle
+const selIds = () => [...sel].flatMap((k) => k.startsWith("a:") ? albumItems(k.slice(2)).map((x) => x.id) : [k]);
+function drawSel() {
+  document.body.classList.toggle("selecting", !!sel);
+  $("#selBar").hidden = !sel;
+  $("#selBtn").classList.toggle("primary", !!sel);
+  if (!sel) return;
+  const n = selIds().length;
+  $("#selCount").textContent = t(`${n} ausgewählt`);
+  $("#selUncoll").hidden = !scope.startsWith("coll:");
+  $$("#selBar [data-bulk]").forEach((b) => { if (!["all", "done"].includes(b.dataset.bulk)) b.disabled = !n; });
+}
+$("#selBtn").addEventListener("click", () => { sel = sel ? null : new Set(); render(); });
+$("#selBar").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-bulk]"); if (!b) return;
+  const act = b.dataset.bulk, ids = selIds(), list = ids.map((id) => items.find((x) => x.id === id)).filter(Boolean);
+  const own = list.filter((x) => x.owner === me.id || isAdmin);
+  const each = async (xs, fn) => { let bad = 0; for (const x of xs) { try { await fn(x); } catch { bad++; } } if (bad) toast(t(`${bad} gingen nicht`), true); };
+  try {
+    if (act === "done") { sel = null; return render(); }
+    if (act === "all") { $$("#grid .card").forEach((c) => sel.add(c.dataset.album ? "a:" + c.dataset.album : c.dataset.id)); return render(); }
+    if (act === "fav") { const on = !ids.every((id) => favs.has(id)); await setFav(ids, on); return toast(on ? "Zu den Favoriten hinzugefügt" : "Aus den Favoriten entfernt"); }
+    if (act === "coll") return openColl(ids);
+    if (act === "uncoll") { await api(`/api/collections/${scope.slice(5)}`, { method: "POST", body: JSON.stringify({ remove: ids }) }); sel = new Set(); toast("Aus der Sammlung entfernt"); return load(); }
+    if (act === "pin") {
+      const on = !own.every((x) => x.pinned);
+      await each(own, (x) => api(`/api/library/${x.id}/pin`, { method: "POST", body: JSON.stringify({ pinned: on }) }));
+      toast(on ? "Wird nie automatisch gelöscht" : "Normal – darf aufgeräumt werden"); return load();
+    }
+    if (act === "share") {
+      const mine = list.filter((x) => x.owner === me.id), on = !mine.every((x) => x.shared);
+      await each(mine, (x) => api(`/api/library/${x.id}/share`, { method: "POST", body: JSON.stringify({ shared: on }) }));
+      toast(on ? "Die ganze Familie sieht das jetzt" : "Nur noch für dich sichtbar"); return load();
+    }
+    if (act === "dl") {     // einzeln, damit Bilder auf dem Handy in der Galerie landen (kein ZIP)
+      toast(t(`${list.length} Dateien werden geladen …`));
+      for (const x of list) { const a = document.createElement("a"); a.href = fileUrl(x.id, "download"); document.body.append(a); a.click(); a.remove(); await new Promise((r) => setTimeout(r, 1200)); }
+      return setTimeout(load, 70000);
+    }
+    if (act === "del") {
+      if (!own.length) return toast("Das gehört jemand anderem", true);
+      if (!confirm(t(`${own.length} Dateien wirklich löschen?`))) return;
+      await each(own, (x) => api(`/api/library/${x.id}`, { method: "DELETE" })); sel = new Set(); toast("Gelöscht"); return load();
+    }
+  } catch (err) { toast(err.message, true); }
+});
+
+// Dialog „Zur Sammlung“: Antippen legt alle hinein; sind schon alle drin, nimmt es sie heraus
+let collIds = [];
+function openColl(ids) { collIds = ids; drawCollList(); $("#collName").value = ""; $("#collDlg").showModal(); }
+function drawCollList() {
+  $("#collList").innerHTML = colls.length ? colls.map((c) => { const n = collIds.filter((id) => c.items.includes(id)).length;
+    return `<button class="btn${n && n === collIds.length ? " on" : n ? " part" : ""}" data-id="${esc(c.id)}"><span>${ic("folder")} ${esc(c.name)}</span>${ic("check")}</button>`; }).join("")
+    : `<div class="hint">Noch keine Sammlung – leg unten eine an.</div>`;
+}
+async function toggleColl(c) {
+  const all = collIds.every((id) => c.items.includes(id));
+  const r = await api(`/api/collections/${c.id}`, { method: "POST", body: JSON.stringify(all ? { remove: collIds } : { add: collIds }) });
+  c.items = r.items; drawCollList(); drawColls();
+  toast(all ? t(`Aus „${c.name}“ entfernt`) : t(`In „${c.name}“ gelegt`));
+}
+$("#collList").addEventListener("click", (e) => { const b = e.target.closest("[data-id]"); if (b) toggleColl(colls.find((c) => c.id === b.dataset.id)).catch((err) => toast(err.message, true)); });
+$("#collNew").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("#collName").value.trim(); if (!name) return;
+  try { const c = await api("/api/collections", { method: "POST", body: JSON.stringify({ name }) }); colls.push(c); $("#collName").value = ""; await toggleColl(c); } catch (err) { toast(err.message, true); }
+});
+$("#collDone").addEventListener("click", () => { $("#collDlg").close(); if (scope.startsWith("coll:")) load(); });
 
 // ---- Nachträglich bearbeiten (läuft als Auftrag auf dem Server) ----------
 let eOp = "cut";

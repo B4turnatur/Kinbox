@@ -138,6 +138,17 @@
     "Wird gleich gelöscht": "Will be deleted soon", "Wird nie automatisch gelöscht": "Never deleted automatically", "Mit der Familie geteilt": "Shared with the family",
     "Keine Vorschau": "No preview", "Dieses Format kann der Browser nicht abspielen – lade die Datei herunter.": "The browser can't play this format – download the file.",
     "Geteilt": "Shared", "Mit Familie teilen": "Share with family", "Behalten (an)": "Keep (on)", "Behalten": "Keep",
+    "Auswählen": "Select", "Favorit": "Favourite", "Favorit (an)": "Favourite (on)", "Favoriten": "Favourites", "Sammlung": "Collection",
+    "Zur Sammlung": "Add to collection", "Aus Sammlung": "Remove from collection", "Teilen": "Share", "Aufs Gerät": "To device",
+    "Neue Sammlung, z. B. Kinderlieder": "New collection, e.g. Kids songs", "Dateiname auch ändern": "Also rename the file", "Neuer Name": "New name",
+    "Zu den Favoriten hinzugefügt": "Added to favourites", "Aus den Favoriten entfernt": "Removed from favourites", "Umbenannt": "Renamed",
+    "Aus der Sammlung entfernt": "Removed from the collection", "Noch keine Sammlung – leg unten eine an.": "No collection yet – create one below.",
+    "Name der neuen Sammlung:": "Name of the new collection:", "Neuer Name:": "New name:", "Sammlung umbenennen": "Rename collection",
+    "Sammlung löschen (Dateien bleiben)": "Delete collection (files stay)", "Bitte einen Namen eingeben": "Please enter a name",
+    "Zu viele Sammlungen": "Too many collections", "Datei konnte nicht umbenannt werden (wird sie gerade benutzt?)": "File could not be renamed (is it in use?)",
+    "Noch keine Favoriten.": "No favourites yet.", "Öffne eine Datei und tippe auf „Favorit“.": "Open a file and tap \"Favourite\".",
+    "Diese Sammlung ist noch leer.": "This collection is still empty.",
+    "Öffne eine Datei und tippe auf „Zur Sammlung“ – oder wähle mehrere mit „Auswählen“.": "Open a file and tap \"Add to collection\" – or pick several with \"Select\".",
     "Die ganze Familie sieht das jetzt": "The whole family can see this now", "Nur noch für dich sichtbar": "Now only visible to you",
     "Normal – darf aufgeräumt werden": "Normal – may be cleaned up", "Wird nachts geladen": "Will be downloaded at night", "Wird heruntergeladen …": "Downloading …",
     "keine PIN": "no PIN", "(Hauptordner)": "(main folder)", "Nichts zu löschen": "Nothing to delete", "Nichts zu löschen – alle halten ihre Regeln ein": "Nothing to delete – everyone is within their rules",
@@ -208,7 +219,9 @@
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
-    ["Audio-Datei: {0}", "Audio file: {0}"], ["Profilbild {0}", "Profile picture {0}"],
+    ["Audio-Datei: {0}", "Audio file: {0}"], ["{0} ausgewählt", "{0} selected"], ["{0} gingen nicht", "{0} failed"],
+    ["{0} Dateien wirklich löschen?", "Really delete {0} files?"], ["Sammlung „{0}“ löschen? Die Dateien bleiben erhalten.", "Delete collection \"{0}\"? The files stay."],
+    ["Aus „{0}“ entfernt", "Removed from \"{0}\""], ["In „{0}“ gelegt", "Added to \"{0}\""], ["Profilbild {0}", "Profile picture {0}"],
     ["{0} – Instagram-Profilbilder gehen nur mit Instagram-Cookies", "{0} – Instagram profile pictures only work with Instagram cookies"],
     ["Eingerichtet für: {0}", "Set up for: {0}"],
     ["Aufs Handy ({0})", "To phone ({0})"], ["Lädt herunter ({0})", "Downloading ({0})"], ["Lädt Fotos ({0})", "Downloading photos ({0})"], ["gallery-dl nicht gefunden: {0}", "gallery-dl not found: {0}"],

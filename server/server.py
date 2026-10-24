@@ -26,7 +26,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.12.0"
+APP_VERSION = "3.12.1"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -166,6 +166,8 @@ def build_args(opts: dict, job_dir: Path, temp_dir: Path | None = None, archive_
         raise OptionError("Ungültige URL")
 
     mode = opts.get("mode", "video")
+    # TikTok bietet zusätzlich die reine Musik als Tonspur an – "ba" würde sie nehmen und Stimme/Originalton verlieren
+    ba = "ba[format_id!=audio]" if "tiktok.com" in _host(url) else "ba"
     a: list[str] = [
         "--newline", "--progress", "--no-colors", "--no-simulate", "--ignore-config",
         "--windows-filenames", "--no-part" if opts.get("noPart") else "--part",
@@ -216,7 +218,7 @@ def build_args(opts: dict, job_dir: Path, temp_dir: Path | None = None, archive_
         fmt = opts.get("audioFormat", "mp3")
         if fmt not in AUDIO_FORMATS:
             raise OptionError("Unbekanntes Audioformat")
-        a += ["-f", "ba/b", "-x", "--audio-format", fmt]
+        a += ["-f", f"{ba}/b", "-x", "--audio-format", fmt]
         br = str(opts.get("audioBitrate", "best"))
         if fmt not in ("flac", "wav", "alac", "best"):
             if br == "best":
@@ -249,7 +251,7 @@ def build_args(opts: dict, job_dir: Path, temp_dir: Path | None = None, archive_
             sort.append(VCODECS[vcodec])
         if container == "mp4":
             sort.append("acodec:m4a")  # AAC-Ton, spielt überall
-        a += ["-f", "bv*+ba/b"]
+        a += ["-f", f"bv*+{ba}/b"]
         if sort:
             a += ["-S", ",".join(sort)]
         if container != "auto":

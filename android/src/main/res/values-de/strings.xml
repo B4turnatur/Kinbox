@@ -11,4 +11,8 @@
     <string name="channel">Downloads</string>
     <string name="done">Download fertig ✓</string>
     <string name="failed">Download fehlgeschlagen</string>
+    <string name="offline">Kinbox nicht erreichbar – WLAN/mobile Daten prüfen und ob der Server läuft.</string>
+    <string name="no_link">Kein Link in der Zwischenablage.</string>
+    <string name="paste_short">Aus Zwischenablage</string>
+    <string name="paste_long">Link aus der Zwischenablage laden</string>
 </resources>

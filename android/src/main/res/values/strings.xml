@@ -12,4 +12,8 @@
     <string name="channel">Downloads</string>
     <string name="done">Download finished ✓</string>
     <string name="failed">Download failed</string>
+    <string name="offline">Kinbox not reachable – check Wi-Fi/mobile data and whether the server is running.</string>
+    <string name="no_link">No link in the clipboard.</string>
+    <string name="paste_short">From clipboard</string>
+    <string name="paste_long">Download link from clipboard</string>
 </resources>

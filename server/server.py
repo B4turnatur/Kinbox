@@ -8,6 +8,7 @@ Start:  python server.py         (oder start.bat)
 """
 from __future__ import annotations
 
+import html
 import json
 import mimetypes
 import os
@@ -88,8 +89,23 @@ def load_settings() -> dict:
     return settings
 
 
+def write_atomic(path: Path, text: str) -> None:
+    """Erst eigene tmp-Datei, dann umbenennen – ein Absturz hinterlässt nie eine halbe JSON-Datei."""
+    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    for i in range(10):   # Windows: Virenscanner/Leser hält die Zieldatei kurz offen
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == 9:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.1)
+
+
 def save_settings(settings: dict) -> None:
-    SETTINGS_FILE.write_text(json.dumps(settings, indent=2, ensure_ascii=False), encoding="utf-8")
+    write_atomic(SETTINGS_FILE, json.dumps(settings, indent=2, ensure_ascii=False))
 
 
 FIRST_RUN = not SETTINGS_FILE.exists()
@@ -160,7 +176,31 @@ def safe_subfolder(sub: str) -> str:
     return "/".join(p for p in cleaned if p)
 
 
+WIN_RESERVED = re.compile(r"^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$", re.I)
+
+
+def safe_name(name: str, maxlen: int, fallback: str) -> str:
+    """Ein Datei-/Ordnername ohne Pfadzeichen; „CON“, „NUL“ … wären unter Windows Geräte statt Dateien."""
+    n = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name)[:maxlen].strip(" .") or fallback
+    return "_" + n if WIN_RESERVED.match(n) else n
+
+
 def build_args(opts: dict, job_dir: Path, temp_dir: Path | None = None, archive_dir: Path | None = None) -> list[str]:
+    """Prüft alle Optionen (Whitelist) und übersetzt sie – falsche Typen aus dem JSON werden zu OptionError."""
+    if not isinstance(opts, dict):
+        raise OptionError("Ungültige Optionen")
+    for k in ("url", "title", "thumbnail", "subfolder", "filenameTemplate", "playlistItems", "rateLimit"):
+        if opts.get(k) is not None and not isinstance(opts[k], str):
+            raise OptionError(f"Ungültiger Wert für {k}")
+    try:
+        return _build_args(opts, job_dir, temp_dir, archive_dir)
+    except OptionError:
+        raise
+    except (TypeError, ValueError, AttributeError) as e:   # z. B. Liste statt Text, {"trim": 5}
+        raise OptionError(f"Ungültige Optionen ({e})")
+
+
+def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: Path | None) -> list[str]:
     url = (opts.get("url") or "").strip()
     if not re.match(r"^https?://", url):
         raise OptionError("Ungültige URL")
@@ -211,7 +251,9 @@ def build_args(opts: dict, job_dir: Path, temp_dir: Path | None = None, archive_
             tpl = "%(playlist_title)s/%(playlist_index)03d - %(title)s.%(ext)s"
         else:
             tpl = "%(title)s [%(id)s].%(ext)s"
-    if ".." in tpl or tpl.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", tpl):
+    # yt-dlp: „thumbnail:/pfad“ (Typ-Präfix) und ~, $VAR, %VAR% würden absolute Pfade außerhalb des Ordners ergeben
+    if ".." in tpl or tpl.startswith(("/", "\\", "~")) or re.match(r"^\w+:", tpl) or "$" in tpl \
+            or re.search(r"%[A-Za-z_][\w()]*%", re.sub(r"%\([^)]*\)", "", tpl)):
         raise OptionError("Dateinamen-Vorlage darf keine absoluten Pfade oder '..' enthalten")
     a += ["-o", tpl]
 
@@ -488,13 +530,21 @@ _save_pending = threading.Event()
 def load_jobs():
     if JOBS_FILE.exists():
         try:
-            for d in json.loads(JOBS_FILE.read_text(encoding="utf-8")):
-                j = Job.from_disk(d)
-                JOBS[j.id] = j
-                if j.status in ("queued", "scheduled"):
-                    QUEUE.append(j.id)
+            data = json.loads(JOBS_FILE.read_text(encoding="utf-8-sig"))
         except Exception as e:
             print(f"[!] jobs.json ignoriert: {e}")
+            return
+        for d in data if isinstance(data, list) else []:
+            try:   # ein kaputter Eintrag soll nicht alle anderen mitnehmen
+                j = Job.from_disk(d)
+                j.created = float(j.created or 0)
+                j.files = [f for f in j.files if isinstance(f, str)] if isinstance(j.files, list) else []
+            except Exception as e:
+                print(f"[!] Auftrag in jobs.json ignoriert: {e}")
+                continue
+            JOBS[j.id] = j
+            if j.status in ("queued", "scheduled"):
+                QUEUE.append(j.id)
 
 
 def save_jobs_soon():
@@ -509,13 +559,14 @@ def _saver():
         with JOBS_LOCK:
             jobs = sorted(JOBS.values(), key=lambda j: j.created)[-SETTINGS["keep_history"]:]
             data = [j.to_disk() for j in jobs]
-        tmp = JOBS_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, JOBS_FILE)
+        try:
+            write_atomic(JOBS_FILE, json.dumps(data, ensure_ascii=False))
+        except OSError as e:   # z. B. Platte voll – der Thread darf nicht sterben, sonst wird nie wieder gespeichert
+            print(f"[!] jobs.json nicht gespeichert: {e}")
 
 
 def _running_count() -> int:
-    return sum(1 for j in JOBS.values() if j.status == "running")
+    return sum(1 for j in list(JOBS.values()) if j.status == "running")   # list(): Kopie, auch ohne JOBS_LOCK sicher
 
 
 def in_night_window() -> bool:
@@ -874,7 +925,7 @@ def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = ""):
             metas.append({"title": "", "uploader": ""})
     title = next((m["title"] for m in metas if m["title"]), "") or (job.title if job.title != job.url else "") \
         or next((m["uploader"] for m in metas if m["uploader"]), "") or "Foto"
-    base = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", title)[:60].strip(" .") or "Foto"
+    base = safe_name(title, 60, "Foto")
     n = sum(kind_of(f.name) == "image" for f in media)
     album = job.id if n > 1 else ""     # mehrere Bilder: eigener Ordner + in der Mediathek als ein Album
     if album:
@@ -925,26 +976,46 @@ def lib_load():
     if not LIBRARY_FILE.exists():
         return
     try:
-        data = json.loads(LIBRARY_FILE.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"[!] library.json ignoriert: {e}")
+        data = json.loads(LIBRARY_FILE.read_text(encoding="utf-8-sig"))
+        entries, log = data.get("entries") or [], data.get("cleanup_log") or []
+    except Exception as e:   # Sicherung behalten – der nächste Speichervorgang würde sie sonst überschreiben
+        print(f"[!] library.json ignoriert (Kopie: library.json.kaputt): {e}")
+        shutil.copyfile(LIBRARY_FILE, LIBRARY_FILE.with_name("library.json.kaputt"))
         return
-    for e in data.get("entries", []):
-        if Path(e.get("path", "")).exists():
-            LIB[e["id"]] = e
-    CLEANUP_LOG.extend(data.get("cleanup_log", []))
+    for e in entries if isinstance(entries, list) else []:
+        if not isinstance(e, dict) or not isinstance(e.get("id"), str) or not isinstance(e.get("path"), str):
+            continue
+        try:
+            e["added"] = float(e.get("added") or 0)
+        except (TypeError, ValueError):
+            e["added"] = 0.0
+        e.setdefault("name", Path(e["path"]).name)
+        e.setdefault("kind", kind_of(e["path"]))
+        LIB[e["id"]] = e
+    lib_prune_missing()
+    CLEANUP_LOG.extend(l for l in (log if isinstance(log, list) else []) if isinstance(l, dict))
     # bis 3.11.1: Foto-Beiträge ohne Album – mehrere Bilder aus einem Auftrag nachträglich zusammenfassen
     old = [e for e in LIB.values() if "album" not in e and photo_site(e.get("url") or "")]
     for e in old:
         e["album"] = (e.get("job_id") or "") if sum(o.get("job_id") == e.get("job_id") and o.get("kind") == "image" for o in old) > 1 else ""
 
 
+def lib_prune_missing() -> bool:
+    """Einträge ohne Datei entfernen. Fehlen ALLE Dateien, ist eher die Platte (NAS, USB) gerade weg –
+    dann nichts anfassen, sonst wären Titel, Favoriten und Freigaben verloren. False = Speicher fehlt."""
+    with LIB_LOCK:
+        gone = [eid for eid, e in LIB.items() if not Path(e["path"]).exists()]
+        if gone and len(gone) == len(LIB):
+            return False   # ponytail: alles-oder-nichts; fällt nur ein Unterordner aus, wird trotzdem aufgeräumt
+        for eid in gone:
+            LIB.pop(eid, None)
+        return True
+
+
 def lib_save():
     with LIB_LOCK:
         data = {"entries": list(LIB.values()), "cleanup_log": list(CLEANUP_LOG)}
-        tmp = LIBRARY_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, LIBRARY_FILE)
+        write_atomic(LIBRARY_FILE, json.dumps(data, ensure_ascii=False))
 
 
 def lib_by_path(path: str) -> dict | None:
@@ -1085,6 +1156,7 @@ AVATARS = ["😀", "😎", "🦊", "🐼", "🐯", "🦄", "🐸", "🐙", "🦁
 COLORS = ["#7c5cff", "#ff6b6b", "#3ecf8e", "#f5a524", "#2fb7ff", "#ff5cc8", "#9aa0a6", "#00c2a8"]
 DEFAULT_USER_CLEANUP = {"after_pc_download": False, "max_age_days": 0, "max_size_gb": 0}
 _pin_fails: dict[str, list[float]] = {}
+_PIN_LOCK = threading.Lock()
 
 
 def _hash_pin(pin: str, salt: str) -> str:
@@ -1093,14 +1165,11 @@ def _hash_pin(pin: str, salt: str) -> str:
 
 def users_save():
     with USERS_LOCK:
-        tmp = USERS_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(list(USERS.values()), indent=2, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, USERS_FILE)
+        write_atomic(USERS_FILE, json.dumps(list(USERS.values()), indent=2, ensure_ascii=False))
 
 
 def folder_name(name: str) -> str:
-    f = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .") or "Profil"
-    return f[:40]
+    return safe_name(name, 40, "Profil")
 
 
 def new_user(name: str, role: str = "member", avatar: str = "", color: str = "", folder: str | None = None) -> dict:
@@ -1126,9 +1195,25 @@ def new_user(name: str, role: str = "member", avatar: str = "", color: str = "",
 def users_load():
     """Lädt users.json – beim ersten Start wird der bisherige Token zum Admin-Profil."""
     if USERS_FILE.exists():
-        for u in json.loads(USERS_FILE.read_text(encoding="utf-8")):
-            u.setdefault("cleanup", dict(DEFAULT_USER_CLEANUP))
-            u.setdefault("quota_gb", 0)
+        try:
+            data = json.loads(USERS_FILE.read_text(encoding="utf-8-sig"))
+            if not isinstance(data, list):
+                raise ValueError("keine Liste")
+        except Exception as e:  # nicht still ein neues Admin-Profil anlegen und die Datei überschreiben
+            print(f"[!] users.json konnte nicht gelesen werden: {e}")
+            sys.exit(1)
+        for u in data:
+            if not isinstance(u, dict) or not u.get("id"):
+                continue
+            u["id"] = str(u["id"])
+            if not isinstance(u.get("token"), str) or not u["token"]:
+                u["token"] = secrets.token_urlsafe(18)   # ohne Token könnte sich niemand mehr anmelden
+            for k, v in (("name", "Profil"), ("role", "member"), ("avatar", "❔"), ("color", COLORS[0]),
+                         ("pin_hash", ""), ("pin_salt", ""), ("created", 0), ("quota_gb", 0)):
+                u.setdefault(k, v)
+            u.setdefault("folder", "" if u["role"] == "admin" else u["id"])   # Mitglied nie im Admin-Ordner
+            if not isinstance(u.get("cleanup"), dict):
+                u["cleanup"] = dict(DEFAULT_USER_CLEANUP)
             USERS[u["id"]] = u
     if not USERS:
         admin = new_user("Admin", role="admin", avatar="👑", folder="")
@@ -1146,9 +1231,10 @@ def admin_user() -> dict:
 def user_by_token(token: str) -> dict | None:
     if not token:
         return None
+    token = token.encode()   # compare_digest wirft bei Nicht-ASCII-Text TypeError → 500
     with USERS_LOCK:
         for u in USERS.values():
-            if hmac.compare_digest(token, u["token"]):
+            if hmac.compare_digest(token, u["token"].encode()):
                 return u
     return None
 
@@ -1182,17 +1268,20 @@ def check_quota(u: dict):
 
 
 def check_pin(u: dict, pin: str) -> bool:
-    now = time.time()
-    fails = [t for t in _pin_fails.get(u["id"], []) if now - t < 300]
-    if len(fails) >= 8:
-        raise OptionError("Zu viele falsche Versuche – bitte 5 Minuten warten.")
-    ok = not u.get("pin_hash") or hmac.compare_digest(_hash_pin(pin or "", u.get("pin_salt", "")), u["pin_hash"])
+    # Sperre um Zählen + Prüfen: sonst sehen parallele Anfragen alle denselben Zählerstand und umgehen das Limit
+    with _PIN_LOCK:
+        now = time.time()
+        fails = [t for t in _pin_fails.get(u["id"], []) if now - t < 300]
+        if len(fails) >= 8:
+            raise OptionError("Zu viele falsche Versuche – bitte 5 Minuten warten.")
+        ok = not u.get("pin_hash") or hmac.compare_digest(_hash_pin(pin or "", u.get("pin_salt", "")), u["pin_hash"])
+        if not ok:
+            fails.append(now)
+            _pin_fails[u["id"]] = fails
+        else:
+            _pin_fails.pop(u["id"], None)
     if not ok:
-        fails.append(now)
-        _pin_fails[u["id"]] = fails
         time.sleep(0.8)
-    else:
-        _pin_fails.pop(u["id"], None)
     return ok
 
 
@@ -1218,9 +1307,8 @@ def janitor_once(only_user: str | None = None) -> int:
     now = time.time()
     removed = 0
     with LIB_LOCK:
-        for eid, e in list(LIB.items()):
-            if not Path(e["path"]).exists():
-                LIB.pop(eid, None)
+        if not lib_prune_missing():
+            return 0           # Speicher nicht erreichbar – Regeln später anwenden
         for uid, u in list(USERS.items()):
             if only_user and uid != only_user:
                 continue
@@ -1471,7 +1559,7 @@ def fmt_time(sec: float) -> str:
 
 def edit_check(kind: str, body: dict) -> dict:
     """Prüft eine Bearbeitung und gibt nur erlaubte Felder zurück."""
-    op = body.get("op")
+    op = str(body.get("op") or "")
     if op not in EDIT_OPS:
         raise OptionError("Unbekannte Bearbeitung")
     if kind not in EDIT_OPS[op]:
@@ -1488,9 +1576,10 @@ def edit_check(kind: str, body: dict) -> dict:
             raise OptionError("Das Ende muss nach dem Start liegen")
         ed.update(start=start, end=end)
     elif op == "audio":
-        if body.get("format", "mp3") not in AUDIO_ENC:
+        fmt = str(body.get("format") or "mp3")
+        if fmt not in AUDIO_ENC:
             raise OptionError("Unbekanntes Audioformat")
-        ed.update(format=body.get("format", "mp3"), bitrate=str(body.get("bitrate") or "320"))
+        ed.update(format=fmt, bitrate=str(body.get("bitrate") or "320"))
     elif op == "rotate":
         if str(body.get("angle")) not in ROTATE:
             raise OptionError("Ungültiger Winkel")
@@ -1653,9 +1742,15 @@ def fetch_info(url: str, playlist: bool) -> dict:
         err = r.stderr.decode("utf-8", "replace").strip().splitlines()
         msg = next((l[6:].strip() for l in reversed(err) if l.startswith("ERROR:")), err[-1] if err else "Unbekannter Fehler")
         raise OptionError(msg)
-    info = json.loads(r.stdout.decode("utf-8", "replace"))
+    try:
+        info = json.loads(r.stdout.decode("utf-8", "replace"))
+    except ValueError:
+        raise OptionError("yt-dlp hat keine gültigen Infos geliefert")
     out = summarize_info(info)
-    INFO_CACHE[key] = (time.time(), out)
+    now = time.time()
+    for k in [k for k, (t, _) in list(INFO_CACHE.items()) if now - t >= 600]:   # sonst wächst der Cache endlos
+        INFO_CACHE.pop(k, None)
+    INFO_CACHE[key] = (now, out)
     return out
 
 
@@ -1753,6 +1848,12 @@ def err(msg, code=400):
     return jsonify(error=msg), code
 
 
+def json_body() -> dict:
+    """JSON-Körper als dict – eine Liste oder Zahl statt Objekt gäbe sonst überall AttributeError (500)."""
+    b = request.get_json(silent=True)
+    return b if isinstance(b, dict) else {}
+
+
 @app.get("/")
 def index():
     from flask import redirect
@@ -1817,7 +1918,7 @@ def js_runtime():
 
 def _my_log(limit: int) -> list:
     uid = me()["id"]
-    return [l for l in CLEANUP_LOG if is_admin() or l.get("owner") == uid][:limit]
+    return [l for l in list(CLEANUP_LOG) if is_admin() or l.get("owner") == uid][:limit]   # Kopie: Janitor schreibt parallel
 
 
 @app.get("/api/ping")
@@ -1845,7 +1946,7 @@ def profiles():
 
 @app.post("/api/login")
 def login():
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     u = USERS.get(str(body.get("id", "")))
     if not u:
         return err("Profil nicht gefunden", 404)
@@ -1866,7 +1967,7 @@ def get_me():
 @app.post("/api/me")
 def update_me():
     u = me()
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     try:
         _apply_profile(u, body, admin_fields=False)
         if "pin" in body:
@@ -1918,7 +2019,7 @@ def list_users():
             d["token"] = u["token"]
             d["usage"] = user_usage(u["id"])
             d["files"] = lib_stats(u["id"])["count"]
-            d["active_jobs"] = sum(1 for j in JOBS.values() if j.owner == u["id"] and j.status in ("queued", "running", "scheduled"))
+            d["active_jobs"] = sum(1 for j in list(JOBS.values()) if j.owner == u["id"] and j.status in ("queued", "running", "scheduled"))
             out.append(d)
     return jsonify(out)
 
@@ -1926,7 +2027,7 @@ def list_users():
 @app.post("/api/users")
 def create_user():
     need_admin()
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     name = str(body.get("name", "")).strip()
     if not name:
         return err("Bitte einen Namen angeben")
@@ -1953,7 +2054,7 @@ def create_user():
 def patch_user(uid):
     need_admin()
     u = USERS.get(uid) or abort(404)
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     try:
         _apply_profile(u, body, admin_fields=True)
         if "pin" in body:
@@ -1992,8 +2093,9 @@ def delete_user(uid):
                 kill_job(j)
     removed = 0
     if request.args.get("files") == "1":
-        for e in [e for e in LIB.values() if e.get("owner") == uid]:
-            removed += lib_delete(e["id"])
+        with LIB_LOCK:
+            for e in [e for e in LIB.values() if e.get("owner") == uid]:
+                removed += lib_delete(e["id"])
     else:   # Dateien bleiben – sie gehören dann dir
         with LIB_LOCK:
             for e in LIB.values():
@@ -2014,8 +2116,8 @@ def delete_user(uid):
 
 @app.post("/api/info")
 def info():
-    body = request.get_json(silent=True) or {}
-    url = (body.get("url") or "").strip()
+    body = json_body()
+    url = str(body.get("url") or "").strip()
     if not re.match(r"^https?://", url):
         return err("Ungültige URL")
     try:
@@ -2037,7 +2139,7 @@ def info():
 
 @app.post("/api/jobs")
 def create_job():
-    opts = request.get_json(silent=True) or {}
+    opts = json_body()
     try:
         check_quota(me())
         build_args(opts, download_root())  # vorab prüfen, damit Fehler sofort sichtbar sind
@@ -2076,7 +2178,7 @@ def add_via_get():
     if "text/html" in (request.headers.get("Accept") or ""):
         return Response(f"""<!doctype html><meta name=viewport content="width=device-width,initial-scale=1">
 <body style="font:18px system-ui;background:#121216;color:#eee;display:grid;place-items:center;height:90vh;text-align:center">
-<div><div style="font-size:48px">✓</div>Zur Warteschlange hinzugefügt<br><small style="color:#999">{preset}</small>
+<div><div style="font-size:48px">✓</div>Zur Warteschlange hinzugefügt<br><small style="color:#999">{html.escape(preset)}</small>
 <p><a style="color:#a48bff" href="/library">Zur Mediathek</a></p></div>""", mimetype="text/html")
     return jsonify(job.public()), 201
 
@@ -2133,6 +2235,10 @@ def retry_job(jid):
     old = _get(jid)
     if old.status in ("queued", "running", "scheduled"):
         return err("Auftrag läuft noch")
+    try:
+        check_quota(USERS.get(old.owner) or me())   # sonst ließe sich das Kontingent per „Wiederholen“ umgehen
+    except OptionError as e:
+        return err(str(e))
     job = Job({**old.options, "title": old.title, "thumbnail": old.thumbnail}, owner=old.owner)
     with QUEUE_COND:
         JOBS.pop(jid, None)
@@ -2257,7 +2363,7 @@ def library_download(eid):
 @app.post("/api/library/<eid>/pin")
 def library_pin(eid):
     e = _entry(eid, write=True)
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     with LIB_LOCK:
         e["pinned"] = bool(body.get("pinned", not e.get("pinned")))
         if e["pinned"]:
@@ -2269,7 +2375,7 @@ def library_pin(eid):
 @app.post("/api/library/<eid>/share")
 def library_share(eid):
     e = _entry(eid, write=True)
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     with LIB_LOCK:
         e["shared"] = bool(body.get("shared", not e.get("shared")))
     lib_save()
@@ -2280,15 +2386,14 @@ def library_share(eid):
 def library_rename(eid):
     """Titel ändern, auf Wunsch auch den Dateinamen (bleibt im selben Ordner)."""
     e = _entry(eid, write=True)
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     title = str(body.get("title") or "").strip()[:200]
     if not title:
         return err("Bitte einen Namen eingeben")
     with LIB_LOCK:
         if body.get("file"):
             old = Path(e["path"])
-            base = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", title)[:120].strip(" .") or "Datei"
-            new = old.with_name(base + old.suffix)
+            new = old.with_name(safe_name(title, 120, "Datei") + old.suffix)
             if new != old:
                 new = unique_path(new)
                 try:
@@ -2320,7 +2425,7 @@ def _readable_ids(ids) -> list[str]:
 @app.post("/api/library/favs")
 def library_favs():
     """{add: [ids], remove: [ids]}"""
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     add = _readable_ids(body.get("add") or [])
     with USERS_LOCK:
         u = me()
@@ -2334,7 +2439,7 @@ def library_favs():
 
 @app.post("/api/collections")
 def collection_new():
-    name = str((request.get_json(silent=True) or {}).get("name") or "").strip()[:60]
+    name = str((json_body()).get("name") or "").strip()[:60]
     if not name:
         return err("Bitte einen Namen eingeben")
     with USERS_LOCK:
@@ -2350,7 +2455,7 @@ def collection_new():
 @app.post("/api/collections/<cid>")
 def collection_update(cid):
     """{name?, add?: [ids], remove?: [ids]}"""
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     add = _readable_ids(body.get("add") or [])
     with USERS_LOCK:
         c = _coll(cid)
@@ -2379,7 +2484,7 @@ def collection_delete(cid):
 def library_edit(eid):
     """Nachträglich bearbeiten: läuft als Auftrag, das Ergebnis kommt als neue Datei in die Mediathek."""
     e = _entry(eid, write=True)
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     owner = USERS.get(e.get("owner") or "") or me()
     try:
         check_quota(owner)
@@ -2409,7 +2514,7 @@ def cleanup_run():
 
 @app.post("/api/settings")
 def update_settings():
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     u = me()
     # Eigene Aufräum-Regeln darf jede Person selbst einstellen
     if isinstance(body.get("cleanup"), dict):
@@ -2433,7 +2538,10 @@ def update_settings():
         need_admin()
         with SETTINGS_LOCK:
             if "max_parallel" in body:
-                SETTINGS["max_parallel"] = max(1, min(int(body["max_parallel"]), 8))
+                try:
+                    SETTINGS["max_parallel"] = max(1, min(int(body["max_parallel"]), 8))
+                except (TypeError, ValueError):
+                    return err("Ungültiger Wert für max_parallel")
             if "download_dir" in body and body["download_dir"]:
                 p = Path(body["download_dir"]).expanduser()
                 try:
@@ -2502,7 +2610,7 @@ def get_cookies():
 @app.post("/api/cookies")
 def upload_cookies():
     need_admin()
-    text = str((request.get_json(silent=True) or {}).get("text") or "")
+    text = str((json_body()).get("text") or "")
     if len(text) > 2_000_000:
         return err("Datei zu groß")
     old = ""

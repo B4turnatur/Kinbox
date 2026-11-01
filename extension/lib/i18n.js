@@ -217,6 +217,9 @@
     "Knopf in andere Ecke": "Move button to another corner", "Auf dieser Seite ausblenden": "Hide on this site", "Position über dem Video": "Position on the video",
     "Oben links": "Top left", "Oben rechts": "Top right", "Unten links": "Bottom left", "Unten rechts": "Bottom right", "Anzeigen auf": "Show on",
     "Ganze Playlist laden": "Download whole playlist", "z. B. Musikvideos 4K": "e.g. music videos 4K",
+    "Suchen (Taste /)": "Search (key /)", "Sortierung": "Sort order", "Längste": "Longest", "Seite": "Site", "Alle Seiten": "All sites", "Person": "Person",
+    "Neue Sammlung": "New collection", "Sammlung anlegen": "Create collection", "Vorheriges": "Previous", "Vorheriges (P)": "Previous (P)",
+    "Nächstes": "Next", "Nächstes (N)": "Next (N)", "Angefangen": "Started",
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
@@ -249,6 +252,7 @@
     ["{0} · Ordner", "{0} · Folder"], ["{0} Downloads aktiv", "{0} downloads active"], ["{0} entfernt – Dateien gehören jetzt dir", "{0} removed – the files are yours now"],
     ["{0} entfernt, {1} Dateien gelöscht", "{0} removed, {1} files deleted"], ["{0} angelegt – jetzt auf „✉ Einladen“ tippen", "{0} added – now tap \"✉ Invite\""],
     ["Aktuell: yt-dlp {0}", "Up to date: yt-dlp {0}"], ["Update fehlgeschlagen: yt-dlp {0}", "Update failed: yt-dlp {0}"],
+    ["Weiter bei {0}", "Resuming at {0}"],
   ];
   const lang = /^de\b/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "de" : "en";
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

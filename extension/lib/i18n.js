@@ -220,6 +220,15 @@
     "Suchen (Taste /)": "Search (key /)", "Sortierung": "Sort order", "Längste": "Longest", "Seite": "Site", "Alle Seiten": "All sites", "Person": "Person",
     "Neue Sammlung": "New collection", "Sammlung anlegen": "Create collection", "Vorheriges": "Previous", "Vorheriges (P)": "Previous (P)",
     "Nächstes": "Next", "Nächstes (N)": "Next (N)", "Angefangen": "Started",
+    // ---- Abos (Kanäle/Playlists automatisch laden)
+    "Abos": "Subscriptions", "Abo hinzufügen": "Add subscription", "Abonnieren": "Subscribe", "Jetzt prüfen": "Check now", "Öffnen": "Open",
+    "Kinbox schaut regelmäßig nach neuen Videos eines Kanals oder einer Playlist (YouTube, TikTok-Profil …) und lädt sie in deine Mediathek.": "Kinbox regularly checks a channel or playlist (YouTube, TikTok profile …) for new videos and downloads them to your library.",
+    "Link zum Kanal oder zur Playlist": "Link to the channel or playlist", "Name (optional)": "Name (optional)", "wie der Kanal": "same as the channel",
+    "Prüfen": "Check", "stündlich": "hourly", "täglich": "daily", "wöchentlich": "weekly", "Höchstens pro Prüfung": "At most per check",
+    "Nur Videos ab jetzt (sonst gleich die neuesten laden)": "Only videos from now on (otherwise download the newest right away)",
+    "Wird geprüft …": "Checking …", "Noch keine Abos.": "No subscriptions yet.", "Abo löschen? Bisher geladene Videos bleiben.": "Delete subscription? Videos downloaded so far stay.",
+    "Abonniert – Kinbox schaut jetzt regelmäßig nach": "Subscribed – Kinbox will now check regularly", "Unbekannte Vorlage": "Unknown preset",
+    "Intervall": "Interval", "Anzahl pro Prüfung": "Count per check", "Das hast du schon abonniert": "You're already subscribed to that", "Zu viele Abos": "Too many subscriptions",
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
@@ -253,6 +262,7 @@
     ["{0} entfernt, {1} Dateien gelöscht", "{0} removed, {1} files deleted"], ["{0} angelegt – jetzt auf „✉ Einladen“ tippen", "{0} added – now tap \"✉ Invite\""],
     ["Aktuell: yt-dlp {0}", "Up to date: yt-dlp {0}"], ["Update fehlgeschlagen: yt-dlp {0}", "Update failed: yt-dlp {0}"],
     ["Weiter bei {0}", "Resuming at {0}"],
+    ["alle {0} Std.", "every {0} h"], ["Geprüft {0}", "Checked {0}"], ["{0} neu", "{0} new"],
   ];
   const lang = /^de\b/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "de" : "en";
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

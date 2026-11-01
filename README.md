@@ -54,7 +54,7 @@ Up to 8K & 60 fps, MP3/FLAC, trimming, chapters, subtitles, playlists, GIF or sm
 <td width="33%" valign="top">
 
 ### 📚 Your own library
-Search, play and save to your phone – in the browser, installable as an app.
+Search, play, resume where you left off, save to your phone – and subscribe to channels so new videos arrive by themselves.
 
 </td>
 </tr>
@@ -181,7 +181,7 @@ Shortcuts: **Alt+Shift+D** popup · **Alt+Shift+Q** download the current page ·
 2. Connect it: long-press your **invite link** (e.g. in WhatsApp) → **Share → Kinbox**. Or open the library on your phone → profile → **Set up Android app → Connect with the app**.
 3. From now on: in YouTube, TikTok, Instagram or the browser tap **Share → Kinbox**. You get the same options as in the extension – quality, audio, trimming with a preview player, chapters, presets, queue – and "To phone" saves the file to `Downloads/Kinbox`.
 
-Only works on the home Wi-Fi. Notifications for finished downloads arrive while the app is open.
+Only works on the home Wi-Fi. Notifications for finished downloads arrive while the app is open. Long-press the app icon → **From clipboard** to open a copied link in Kinbox.
 
 ## 👨‍👩‍👧 Family & profiles
 
@@ -193,6 +193,10 @@ Only works on the home Wi-Fi. Notifications for finished downloads arrive while 
 - Each person gets their own subfolder (`Downloads/Kinbox/<name>`); the admin keeps the main folder
 - **New key** invalidates a person's old links and extension access (e.g. a lost phone)
 - **Privacy:** admins can see everyone's files under *All*. Let your family know.
+
+## 🔔 Subscriptions
+
+Library → ⚙ → **Subscriptions**: paste a link to a YouTube channel or playlist (or a TikTok profile – anything yt-dlp sees as a playlist), pick video or audio and how often to check. Kinbox looks for new videos in the background and downloads them into your library (subfolder = subscription name). "Only videos from now on" skips everything that is already there. Storage quotas and the night window apply; errors show up next to the subscription.
 
 ## Server settings (`server/settings.json`)
 

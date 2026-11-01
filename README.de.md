@@ -54,7 +54,7 @@ Bis 8K & 60 fps, MP3/FLAC, Zuschneiden, Kapitel, Untertitel, Playlists, GIF oder
 <td width="33%" valign="top">
 
 ### 📚 Eigene Mediathek
-Suchen, abspielen und aufs Handy laden – im Browser, als App installierbar.
+Suchen, abspielen, weiterschauen, aufs Handy laden – und Kanäle abonnieren, damit neue Videos von selbst kommen.
 
 </td>
 </tr>
@@ -152,7 +152,7 @@ python3 server/server.py
 2. Verbinden: den **Einladungslink** (z. B. in WhatsApp) lange drücken → **Teilen → Kinbox**. Oder am Handy die Mediathek öffnen → Profil → **Android-App einrichten → Mit der App verbinden**.
 3. Ab jetzt: in YouTube, TikTok, Instagram oder im Browser **Teilen → Kinbox**. Es gibt dieselben Optionen wie in der Erweiterung – Qualität, Audio, Zuschneiden mit Vorschau-Player, Kapitel, Presets, Warteschlange – und „Aufs Handy“ speichert die Datei unter `Downloads/Kinbox`.
 
-Nur im WLAN zu Hause nutzbar. Benachrichtigungen über fertige Downloads kommen, solange die App geöffnet ist.
+Nur im WLAN zu Hause nutzbar. Benachrichtigungen über fertige Downloads kommen, solange die App geöffnet ist. Lange aufs App-Symbol tippen → **Aus Zwischenablage** öffnet einen kopierten Link in Kinbox.
 
 ## 👨‍👩‍👧 Familie & Profile
 
@@ -225,6 +225,10 @@ Im Browser `http://<IP-des-Servers>:8765` öffnen (oder in der Erweiterung auf �
 | Speicherlimit in GB | Wird der Ordner größer, werden die ältesten Dateien zuerst gelöscht |
 
 Gelöscht werden **nur Dateien, die Kinbox selbst geladen hat** – und nie welche mit 📌.
+
+## 🔔 Abos
+
+Mediathek → ⚙ → **Abos**: Link zu einem YouTube-Kanal oder einer Playlist einfügen (oder ein TikTok-Profil – alles, was yt-dlp als Playlist kennt), Video oder Audio wählen und wie oft geprüft wird. Kinbox schaut im Hintergrund nach neuen Videos und lädt sie in deine Mediathek (Unterordner = Name des Abos). „Nur Videos ab jetzt“ überspringt alles, was schon da ist. Kontingent und Nachtzeit gelten; Fehler stehen beim Abo.
 
 ## Server-Einstellungen (`server/settings.json`)
 

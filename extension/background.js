@@ -1,30 +1,15 @@
 import "./lib/i18n.js";
-import { api, getSettings, allPresets, deepMerge, DEFAULT_OPTIONS, fileUrl, youtubeId, isSocial } from "./lib/common.js";
-
-// Auf TikTok/Instagram/X/Reddit ist die Adresse im Browser oft nicht die des Videos –
-// das Seiten-Skript kennt das Video, das gerade zu sehen ist.
-export async function mediaUrlForTab(tab, kind = "currentMediaUrl") {
-  if (!tab?.id || !isSocial(tab.url)) return tab?.url;
-  const ask = () => chrome.tabs.sendMessage(tab.id, { type: kind });
-  try {
-    const r = await ask();
-    if (r?.url) return r.url;
-  } catch {
-    try {   // Tab war schon offen, bevor die Erweiterung (neu) geladen wurde
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["content/social.css"] });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content/social.js"] });
-      const r = await ask();
-      if (r?.url) return r.url;
-    } catch { /* egal */ }
-  }
-  return tab.url;
-}
+import { api, getSettings, allPresets, deepMerge, DEFAULT_OPTIONS, fileUrl, libraryUrl, youtubeId, isSocial, mediaUrlForTab, injectContent } from "./lib/common.js";
 
 // ------------------------------------------------------------------------
 // Kontextmenü
 // ------------------------------------------------------------------------
 
-async function buildMenus() {
+// Nacheinander: zwei gleichzeitige Durchläufe (Installation + Preset-Änderung) gäben „duplicate id“-Fehler.
+let menuQueue = Promise.resolve();
+const buildMenus = () => (menuQueue = menuQueue.catch(() => {}).then(rebuildMenus));
+
+async function rebuildMenus() {
   await chrome.contextMenus.removeAll();
   const contexts = ["link", "page", "video", "audio", "image"];
   chrome.contextMenus.create({ id: "root", title: t("Mit Kinbox herunterladen"), contexts });
@@ -41,6 +26,12 @@ chrome.runtime.onInstalled.addListener(async (d) => {
   await buildMenus();
   const s = await getSettings();
   if (d.reason === "install" || !s.serverUrl) chrome.runtime.openOptionsPage();
+  // Schon offene Tabs bekommen die Content-Skripte sonst erst nach dem Neuladen (nach Updates: tote Knöpfe)
+  if (d.reason === "install" || d.reason === "update") {
+    for (const cs of chrome.runtime.getManifest().content_scripts) {
+      for (const tab of await chrome.tabs.query({ url: cs.matches })) injectContent(tab.id, cs.js.at(-1)).catch(() => {});
+    }
+  }
 });
 chrome.runtime.onStartup.addListener(() => { buildMenus(); poll(); });
 
@@ -88,8 +79,8 @@ function openOptionsWindow(url, tabId) {
 // Aufträge anlegen
 // ------------------------------------------------------------------------
 
-function cleanTitle(t) {
-  return (t || "").replace(/^\(\d+\)\s*/, "").replace(/\s*[-–|]\s*YouTube( Music)?$/i, "").trim();
+function cleanTitle(title) {
+  return (title || "").replace(/^\(\d+\)\s*/, "").replace(/\s*[-–|]\s*YouTube( Music)?$/i, "").trim();
 }
 
 export async function queueJob(options) {
@@ -144,10 +135,19 @@ async function toast(tabId, text, error = false) {
 // Fortschritt verfolgen: Badge, Benachrichtigungen, auf PC speichern
 // ------------------------------------------------------------------------
 
-async function track(id, data) {
-  const { tracked = {} } = await chrome.storage.local.get("tracked");
-  tracked[id] = { ...data, added: Date.now() };
-  await chrome.storage.local.set({ tracked });
+// Lesen-Ändern-Schreiben nacheinander, sonst überschreibt pollOnce() einen gerade neu verfolgten Auftrag
+// (dann fehlten Benachrichtigung und „Auf PC speichern“).
+let trackQueue = Promise.resolve();
+function editTracked(fn) {
+  return (trackQueue = trackQueue.catch(() => {}).then(async () => {
+    const { tracked = {} } = await chrome.storage.local.get("tracked");
+    fn(tracked);
+    await chrome.storage.local.set({ tracked });
+  }));
+}
+
+function track(id, data) {
+  return editTracked((tracked) => { tracked[id] = { ...data, added: Date.now() }; });
 }
 
 let polling = false;
@@ -171,35 +171,44 @@ async function pollOnce() {
   try {
     jobs = await api("/api/jobs", { timeout: 8000 });
   } catch {
-    chrome.action.setBadgeText({ text: "" });
+    showBadge([]);
     return false;
   }
   const active = jobs.filter((j) => j.status === "running" || j.status === "queued");
-  chrome.action.setBadgeBackgroundColor({ color: "#7c5cff" });
-  chrome.action.setBadgeText({ text: active.length ? String(active.length) : "" });
+  showBadge(active);
 
   const { tracked = {} } = await chrome.storage.local.get("tracked");
   const s = await getSettings();
-  let changed = false;
+  const gone = [];
   for (const [id, tk] of Object.entries(tracked)) {
     const j = jobs.find((x) => x.id === id);
     if (!j) {
-      if (Date.now() - tk.added > 86400000) { delete tracked[id]; changed = true; }
+      if (Date.now() - tk.added > 86400000) gone.push(id);
       continue;
     }
     if (j.status === "finished") {
       if (s.notify) notify("done-" + id, t("Download fertig ✓"), j.title, j.files.length && !tk.saveToPc);
       if (tk.saveToPc) await saveToPc(j);
-      delete tracked[id]; changed = true;
+      gone.push(id);
     } else if (j.status === "error") {
       if (s.notify) notify("err-" + id, t("Download fehlgeschlagen"), `${j.title}\n${t(j.error)}`);
-      delete tracked[id]; changed = true;
+      gone.push(id);
     } else if (j.status === "cancelled") {
-      delete tracked[id]; changed = true;
+      gone.push(id);
     }
   }
-  if (changed) await chrome.storage.local.set({ tracked });
+  if (gone.length) await editTracked((tr) => { for (const id of gone) delete tr[id]; });
   return active.length > 0;
+}
+
+// Badge: Anzahl laufender Downloads, bei genau einem der Fortschritt in %; Tooltip listet die Aufträge.
+function showBadge(active) {
+  const pct = active.length === 1 && active[0].status === "running" && active[0].percent;
+  chrome.action.setBadgeBackgroundColor({ color: "#7c5cff" });
+  chrome.action.setBadgeText({ text: pct ? Math.floor(pct) + "%" : active.length ? String(active.length) : "" });
+  const lines = active.slice(0, 5).map((j) => `${j.status === "running" ? Math.floor(j.percent || 0) + " %" : t("Wartet")} · ${j.title}`);
+  if (active.length > 5) lines.push(t(`+ ${active.length - 5} weitere`));
+  chrome.action.setTitle({ title: [chrome.i18n.getMessage("actionTitle"), ...lines].join("\n") });
 }
 
 async function saveToPc(job) {
@@ -222,8 +231,14 @@ chrome.notifications.onButtonClicked.addListener(async (nid) => {
   try {
     const job = await api("/api/jobs/" + nid.slice(5));
     await saveToPc(job);
-  } catch (e) { notify("err-" + Date.now(), "Speichern fehlgeschlagen", e.message); }
+  } catch (e) { notify("err-" + Date.now(), t("Speichern fehlgeschlagen"), t(e.message)); }
   chrome.notifications.clear(nid);
+});
+
+// Klick auf „Download fertig“ öffnet die Mediathek
+chrome.notifications.onClicked.addListener(async (nid) => {
+  chrome.notifications.clear(nid);
+  if (nid.startsWith("done-")) chrome.tabs.create({ url: await libraryUrl() });
 });
 
 chrome.alarms.create("poll", { periodInMinutes: 0.5 });

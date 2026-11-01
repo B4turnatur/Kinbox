@@ -1,6 +1,6 @@
 import {
-  api, getSettings, saveSettings, allPresets, deepMerge, fileUrl, libraryUrl, isSocial,
-  fmtBytes, fmtTime, parseTime, qualityLabel, youtubeId, playlistId, escapeHtml, icon, presetIcon,
+  api, getSettings, saveSettings, allPresets, deepMerge, fileUrl, libraryUrl, isSocial, mediaUrlForTab,
+  fmtBytes, fmtTime, parseTime, qualityLabel, youtubeId, playlistId, escapeHtml, cssUrl, icon, presetIcon,
 } from "./lib/common.js";
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -47,10 +47,9 @@ async function init() {
   prefill.title = prefill.title.replace(/^\(\d+\)\s*/, "").replace(/\s*[-–|]\s*YouTube( Music)?$/i, "");
   if (tabId && isSocial(tabUrl) && !params.get("url")) {
     // Auf TikTok & Co. zeigt die Adressleiste oft nicht das Video – das Seiten-Skript weiß es
-    try {
-      const r = await chrome.tabs.sendMessage(tabId, { type: "currentMediaUrl" });
-      if (r?.url) { tabUrl = r.url; prefill.title = ""; }
-    } catch { /* Seite wurde vor der Erweiterung geladen */ }
+    // (war der Tab schon vor der Erweiterung offen, wird es nachgeladen)
+    const u = await mediaUrlForTab({ id: tabId, url: tabUrl });
+    if (u && u !== tabUrl) { tabUrl = u; prefill.title = ""; }
   }
   const yt = youtubeId(tabUrl);
   if (yt) prefill.thumbnail = `https://i.ytimg.com/vi/${yt}/hqdefault.jpg`;
@@ -121,7 +120,7 @@ function bindControls() {
   $("#setupLink").addEventListener("click", (e) => { e.preventDefault(); chrome.runtime.openOptionsPage(); });
   $("#go").addEventListener("click", startDownload);
   $("#savePreset").addEventListener("click", savePresetDialog);
-  for (const t of $$(".tab")) t.addEventListener("click", () => showView(t.dataset.view));
+  for (const tb of $$(".tab")) tb.addEventListener("click", () => showView(tb.dataset.view));
 }
 
 function changed() {
@@ -312,6 +311,13 @@ async function loadInfo() {
   } catch (e) {
     if (seq !== infoSeq) return;
     showMedia({ title: prefill.title || url, sub: new URL(url).hostname, thumb: prefill.thumbnail, error: e.message });
+    if (e.status === 0 || e.status === 401) {   // Server weg oder Token falsch: direkt zu den Einstellungen
+      const b = document.createElement("button");
+      b.className = "link";
+      b.textContent = "Einstellungen öffnen";
+      b.onclick = () => chrome.runtime.openOptionsPage();
+      $("#infoError").append(" ", b);
+    }
   }
 }
 
@@ -386,9 +392,9 @@ function bindTrim() {
     });
   }
   $$("[data-now]").forEach((b) => b.addEventListener("click", async () => {
-    const t = await videoTime();
-    if (t == null) return toast("Kein laufendes Video im Tab gefunden.", true);
-    trim[b.dataset.now] = Math.round(t * 10) / 10;
+    const sec = await videoTime();
+    if (sec == null) return toast("Kein laufendes Video im Tab gefunden.", true);
+    trim[b.dataset.now] = Math.round(sec * 10) / 10;
     updateTrimUi();
     render();
   }));
@@ -440,11 +446,11 @@ const player = {
     this.frame = $("#appPlayer iframe");
     this.frame.onload = () => this.frame.contentWindow.postMessage(JSON.stringify({ event: "listening", id: 1, channel: "widget" }), "*");
   },
-  seek(t) { this.send("seekTo", [t, true]); this.send("pauseVideo"); this.now = t; },
+  seek(sec) { this.send("seekTo", [sec, true]); this.send("pauseVideo"); this.now = sec; },
 };
 if (inApp) addEventListener("message", (e) => {
   if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
-  try { const t = JSON.parse(e.data).info?.currentTime; if (t != null) player.now = t; } catch { /* andere Nachricht */ }
+  try { const sec = JSON.parse(e.data).info?.currentTime; if (sec != null) player.now = sec; } catch { /* andere Nachricht */ }
 });
 
 async function videoTime() {
@@ -464,18 +470,18 @@ async function videoTime() {
 }
 
 let seekTimer = null;
-function seekPreview(t) {
-  if (inApp) return $("#trimPreview").checked && player.id && player.seek(t);
+function seekPreview(sec) {
+  if (inApp) return $("#trimPreview").checked && player.id && player.seek(sec);
   if (!$("#trimPreview").checked || !sameVideoInTab()) return;
   clearTimeout(seekTimer);
   seekTimer = setTimeout(() => {
     chrome.scripting.executeScript({
       target: { tabId },
-      args: [t],
-      func: (t) => {
+      args: [sec],
+      func: (sec) => {
         const vids = [...document.querySelectorAll("video")].filter((v) => v.duration);
         vids.sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
-        if (vids[0]) { vids[0].pause(); vids[0].currentTime = t; }
+        if (vids[0]) { vids[0].pause(); vids[0].currentTime = sec; }
       },
     }).catch(() => {});
   }, 120);
@@ -626,7 +632,7 @@ const confirmDelete = new Set();
 
 function showView(v) {
   currentView = v;
-  for (const t of $$(".tab")) t.classList.toggle("active", t.dataset.view === v);
+  for (const tb of $$(".tab")) tb.classList.toggle("active", tb.dataset.view === v);
   $("#view-download").hidden = v !== "download";
   $("#actionbar").hidden = v !== "download";
   $("#view-queue").hidden = v !== "queue";
@@ -688,7 +694,7 @@ async function renderJobs(jobs) {
     acts.push(`<button class="link" data-act="log">${openLogs.has(j.id) ? "Log ausblenden" : "Log"}</button>`);
     return `
     <div class="job ${j.status}" data-id="${j.id}">
-      <div class="jt" style="background-image:url('${escapeHtml(j.thumbnail || "")}')"></div>
+      <div class="jt" style="background-image:url('${escapeHtml(cssUrl(j.thumbnail))}')"></div>
       <div class="jb">
         <div class="jn" title="${escapeHtml(j.title)}">${escapeHtml(j.title)}</div>
         <div class="bar ${indet ? "indet" : ""}"><i style="width:${j.status === "finished" ? 100 : j.percent || 0}%"></i></div>
@@ -744,12 +750,12 @@ function bindQueue() {
 
 let toastTimer;
 function toast(text, err = false) {
-  const t = $("#toast");
-  t.textContent = text;
-  t.className = "toast" + (err ? " err" : "");
-  t.hidden = false;
+  const el = $("#toast");
+  el.textContent = text;
+  el.className = "toast" + (err ? " err" : "");
+  el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), err ? 5000 : 2500);
+  toastTimer = setTimeout(() => (el.hidden = true), err ? 5000 : 2500);
 }
 
 // Damit Einstellungen aus dem Options-Tab sofort greifen

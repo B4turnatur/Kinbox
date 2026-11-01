@@ -216,6 +216,15 @@
     "Zusätzlich als Audio-Datei (MP3 – Format wie unter „Audio“)": "Also save as audio file (MP3 – format as under \"Audio\")",
     "Knopf in andere Ecke": "Move button to another corner", "Auf dieser Seite ausblenden": "Hide on this site", "Position über dem Video": "Position on the video",
     "Oben links": "Top left", "Oben rechts": "Top right", "Unten links": "Bottom left", "Unten rechts": "Bottom right", "Anzeigen auf": "Show on",
+    // ---- Abos (Kanäle/Playlists automatisch laden)
+    "Abos": "Subscriptions", "Abo hinzufügen": "Add subscription", "Abonnieren": "Subscribe", "Jetzt prüfen": "Check now", "Öffnen": "Open",
+    "Kinbox schaut regelmäßig nach neuen Videos eines Kanals oder einer Playlist (YouTube, TikTok-Profil …) und lädt sie in deine Mediathek.": "Kinbox regularly checks a channel or playlist (YouTube, TikTok profile …) for new videos and downloads them to your library.",
+    "Link zum Kanal oder zur Playlist": "Link to the channel or playlist", "Name (optional)": "Name (optional)", "wie der Kanal": "same as the channel",
+    "Prüfen": "Check", "stündlich": "hourly", "täglich": "daily", "wöchentlich": "weekly", "Höchstens pro Prüfung": "At most per check",
+    "Nur Videos ab jetzt (sonst gleich die neuesten laden)": "Only videos from now on (otherwise download the newest right away)",
+    "Wird geprüft …": "Checking …", "Noch keine Abos.": "No subscriptions yet.", "Abo löschen? Bisher geladene Videos bleiben.": "Delete subscription? Videos downloaded so far stay.",
+    "Abonniert – Kinbox schaut jetzt regelmäßig nach": "Subscribed – Kinbox will now check regularly", "Unbekannte Vorlage": "Unknown preset",
+    "Intervall": "Interval", "Anzahl pro Prüfung": "Count per check", "Das hast du schon abonniert": "You're already subscribed to that", "Zu viele Abos": "Too many subscriptions",
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
@@ -247,6 +256,7 @@
     ["{0} von {1} GB genutzt", "{0} of {1} GB used"], ["{0} genutzt von {1} GB · Ordner:", "{0} used of {1} GB · Folder:"], ["{0} genutzt · Ordner:", "{0} used · Folder:"],
     ["{0} · Ordner", "{0} · Folder"], ["{0} Downloads aktiv", "{0} downloads active"], ["{0} entfernt – Dateien gehören jetzt dir", "{0} removed – the files are yours now"],
     ["{0} entfernt, {1} Dateien gelöscht", "{0} removed, {1} files deleted"], ["{0} angelegt – jetzt auf „✉ Einladen“ tippen", "{0} added – now tap \"✉ Invite\""],
+    ["alle {0} Std.", "every {0} h"], ["Geprüft {0}", "Checked {0}"], ["{0} neu", "{0} new"],
   ];
   const lang = /^de\b/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "de" : "en";
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

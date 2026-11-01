@@ -2643,6 +2643,221 @@ def app_update_run():
     threading.Thread(target=_restart, daemon=True).start()  # Sperre bleibt bis zum Beenden gesetzt
     return jsonify(ok=True, version=rel["tag_name"].lstrip("v"))
 
+
+# --------------------------------------------------------------------------- #
+# Abos: Kanäle/Playlists regelmäßig auf neue Videos prüfen (subs.json, fehlt = keine Abos)
+# Eigene „gesehen“-Liste statt --download-archive: „ab jetzt“ braucht nur die IDs, und neue Videos
+# laufen als ganz normale Aufträge (Kontingent, Nachtfenster, Mediathek).
+# --------------------------------------------------------------------------- #
+
+SUBS_FILE = DATA_DIR / "subs.json"
+SUBS: dict[str, dict] = {}
+SUBS_LOCK = threading.RLock()
+SUB_SCAN = 50             # so viele neueste Einträge pro Prüfung ansehen (Playlists mit list=: alle)
+SUB_SEEN_MAX = 5000
+SUB_PUBLIC = ("id", "owner", "url", "name", "preset", "interval_h", "max_items", "night", "from_now",
+              "created", "last_check", "last_new", "error", "checking")
+YT_CHANNEL_RE = re.compile(r"^(https?://(?:www\.|m\.)?youtube\.com/(?:@|channel/|c/|user/)[^/?#]+)/?(?:[?#].*)?$", re.I)
+
+
+def subs_load():
+    if SUBS_FILE.exists():
+        try:
+            for s in json.loads(SUBS_FILE.read_text(encoding="utf-8")):
+                s["checking"] = False
+                SUBS[s["id"]] = s
+        except Exception as e:
+            print(f"[!] subs.json ignoriert: {e}")
+
+
+def subs_save():
+    with SUBS_LOCK:
+        tmp = SUBS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(list(SUBS.values()), ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, SUBS_FILE)
+
+
+def sub_public(s: dict) -> dict:
+    d = {k: s.get(k) for k in SUB_PUBLIC}
+    d["seen_count"] = len(s.get("seen") or [])
+    d["owner_name"] = (USERS.get(s["owner"]) or {}).get("name", "")
+    return d
+
+
+def sub_url(url: str) -> str:
+    """Kanal-Startseite → nur der Reiter „Videos“ (sonst kommen Livestreams und alle Reiter mit)."""
+    url = url.strip()
+    m = YT_CHANNEL_RE.match(url)
+    return m.group(1) + "/videos" if m else url
+
+
+def sub_opts(s: dict, url: str, title: str = "") -> dict:
+    opts = {**BASE_OPTIONS, **SERVER_PRESETS[s["preset"]], "url": url, "title": title,
+            "subfolder": folder_name(s["name"]) if s.get("name") else "", "sub": s["id"]}
+    if s.get("night"):
+        opts["when"] = "night"
+    return opts
+
+
+def sub_scan(url: str) -> list[dict]:
+    """Neueste Einträge (ohne Download): [{id, url, title, …}] in Playlist-Reihenfolge."""
+    cmd = ytdlp_base() + ["--flat-playlist", "--yes-playlist", "--ignore-config", "--no-warnings",
+                          "--print", "%(.{id,url,webpage_url,title,playlist_title,playlist_uploader,live_status})j"]
+    if "list=" not in url:
+        cmd += ["--playlist-end", str(SUB_SCAN)]
+    kw = {"creationflags": 0x08000000} if IS_WINDOWS else {}
+    with tempfile.TemporaryDirectory() as tmp:
+        cmd += cookie_args(Path(tmp)) + list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
+        r = subprocess.run(cmd, capture_output=True, timeout=300, stdin=subprocess.DEVNULL,
+                           env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **kw)
+    out = []
+    for line in r.stdout.decode("utf-8", "replace").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        link = next((x for x in (e.get("url"), e.get("webpage_url")) if isinstance(x, str) and re.match(r"^https?://", x)), "")
+        if e.get("id") and link:
+            out.append({**e, "id": str(e["id"]), "url": link})
+    if not out and r.returncode != 0:
+        err_lines = r.stderr.decode("utf-8", "replace").strip().splitlines()
+        raise OptionError(next((l[6:].strip() for l in reversed(err_lines) if l.startswith("ERROR:")),
+                               err_lines[-1] if err_lines else f"yt-dlp beendet mit Code {r.returncode}"))
+    if "list=" in url:
+        out.reverse()          # Playlists wachsen hinten – neueste zuerst wie bei Kanälen
+    return out
+
+
+def sub_check(sid: str):
+    """Einmal prüfen. Läuft im Hintergrund; Fehler landen im Abo, nie im Server."""
+    with SUBS_LOCK:
+        s = SUBS.get(sid)
+        if not s or s.get("checking"):
+            return
+        owner = USERS.get(s["owner"])
+        if not owner:                     # Profil gelöscht → Abo auch
+            SUBS.pop(sid, None)
+            subs_save()
+            return
+        s["checking"] = True
+    new, error, seen = 0, "", None
+    try:
+        entries = [e for e in sub_scan(s["url"]) if e.get("live_status") not in ("is_live", "is_upcoming")]
+        with SUBS_LOCK:
+            first = s.get("seen") is None     # noch nie geprüft
+            seen = list(s.get("seen") or [])
+            if not s.get("name"):
+                e0 = entries[0] if entries else {}
+                s["name"] = str(e0.get("playlist_uploader") or e0.get("playlist_title") or "")[:60]
+        known = set(seen)
+        fresh = [e for e in dict((e["id"], e) for e in entries).values() if e["id"] not in known]
+        if first and s.get("from_now"):
+            take, skip = [], fresh
+        else:
+            take, skip = fresh[:int(s["max_items"])], fresh[int(s["max_items"]):]
+        for e in reversed(take):          # älteste zuerst, damit das neueste oben in der Mediathek landet
+            check_quota(owner)
+            enqueue(sub_opts(s, e["url"], str(e.get("title") or "")), owner=owner["id"])
+            seen.append(e["id"])
+            new += 1
+        seen += [e["id"] for e in skip]   # mehr als max_items: Rest überspringen statt nachladen
+    except OptionError as e:
+        error = str(e)
+    except subprocess.TimeoutExpired:
+        error = "Zeitüberschreitung beim Abrufen der Infos"
+    except Exception as e:
+        error = f"Interner Fehler: {e}"
+    finally:
+        with SUBS_LOCK:
+            if seen is not None:
+                s["seen"] = seen[-SUB_SEEN_MAX:]
+            s.update(checking=False, last_check=time.time(), last_new=new, error=error)
+            if sid in SUBS:
+                subs_save()
+
+
+def sub_check_soon(sid: str):
+    threading.Thread(target=sub_check, args=(sid,), daemon=True).start()
+
+
+def _subs_loop():
+    while True:
+        time.sleep(60)
+        now = time.time()
+        with SUBS_LOCK:
+            due = [s["id"] for s in SUBS.values()
+                   if not s.get("checking") and now - (s.get("last_check") or 0) >= float(s["interval_h"]) * 3600]
+        for sid in due:                   # nacheinander – schont YouTube & Co.
+            sub_check(sid)
+
+
+def _sub(sid: str) -> dict:
+    s = SUBS.get(sid)
+    if not s or (s["owner"] != me()["id"] and not is_admin()):
+        abort(404)
+    return s
+
+
+@app.get("/api/subs")
+def subs_list():
+    uid = me()["id"]
+    with SUBS_LOCK:
+        mine = [s for s in SUBS.values() if s["owner"] in USERS and (is_admin() or s["owner"] == uid)]
+        return jsonify(sorted((sub_public(s) for s in mine), key=lambda s: (s["owner"] != uid, -s["created"])))
+
+
+@app.post("/api/subs")
+def subs_new():
+    body = request.get_json(silent=True) or {}
+    url = sub_url(str(body.get("url") or ""))
+    preset = str(body.get("preset") or "best")
+    if preset not in SERVER_PRESETS:
+        return err("Unbekannte Vorlage")
+    try:
+        interval, max_items = float(body.get("interval_h") or 6), int(body.get("max_items") or 5)
+    except (TypeError, ValueError):
+        return err("Ungültiger Wert für Intervall")
+    if not 1 <= interval <= 168:
+        return err("Intervall muss zwischen 1 und 168 liegen")
+    if not 1 <= max_items <= 50:
+        return err("Anzahl pro Prüfung muss zwischen 1 und 50 liegen")
+    s = {"id": uuid.uuid4().hex[:10], "owner": me()["id"], "url": url, "name": str(body.get("name") or "").strip()[:60],
+         "preset": preset, "interval_h": interval, "max_items": max_items, "night": bool(body.get("night")),
+         "from_now": body.get("from_now", True) is not False, "created": time.time(),
+         "last_check": 0, "last_new": 0, "error": "", "checking": False, "seen": None}
+    try:
+        build_args(sub_opts(s, url), download_root())   # gleiche Prüfung wie jeder Auftrag (URL, Vorlage)
+    except OptionError as e:
+        return err(str(e))
+    with SUBS_LOCK:
+        if any(x["owner"] == s["owner"] and x["url"] == url for x in SUBS.values()):
+            return err("Das hast du schon abonniert")
+        if sum(1 for x in SUBS.values() if x["owner"] == s["owner"]) >= 50:
+            return err("Zu viele Abos")
+        SUBS[s["id"]] = s
+        subs_save()
+    sub_check_soon(s["id"])               # „ab jetzt“: merkt sich gleich die vorhandenen Videos
+    return jsonify(sub_public(s)), 201
+
+
+@app.delete("/api/subs/<sid>")
+def subs_delete(sid):
+    """Nur das Abo – bisher geladene Dateien bleiben."""
+    with SUBS_LOCK:
+        _sub(sid)
+        SUBS.pop(sid, None)
+        subs_save()
+    return jsonify(ok=True)
+
+
+@app.post("/api/subs/<sid>/check")
+def subs_check_now(sid):
+    s = _sub(sid)
+    if not s.get("checking"):
+        sub_check_soon(sid)
+    return jsonify(sub_public({**s, "checking": True})), 202
+
+
 def migrate_owners():
     """Alte Aufträge/Dateien ohne Besitzer gehören dem Admin."""
     aid = admin_user()["id"]
@@ -2666,6 +2881,8 @@ def main():
     lib_load()
     load_jobs()
     migrate_owners()
+    subs_load()
+    threading.Thread(target=_subs_loop, daemon=True).start()
     threading.Thread(target=_janitor, daemon=True).start()
     threading.Thread(target=lambda: [thumb_file(e) for e in list(LIB.values())], daemon=True).start()
     JANITOR_WAKE.set()

@@ -420,6 +420,7 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
   <div class="tabs2" id="setTabs">
     <button data-t="profile" class="active"><svg class="i"><use href="/static/icons.svg#user"/></svg> Mein Profil</button>
     <button data-t="cleanup"><svg class="i"><use href="/static/icons.svg#eraser"/></svg> Aufräumen</button>
+    <button data-t="subs"><svg class="i"><use href="/static/icons.svg#playlist"/></svg> Abos</button>
     <button data-t="family" id="famTab" hidden><svg class="i"><use href="/static/icons.svg#users"/></svg> Familie</button>
     <button data-t="server" id="srvTab" hidden><svg class="i"><use href="/static/icons.svg#server"/></svg> Server</button>
   </div>
@@ -463,6 +464,27 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
     <div class="row"><button type="button" class="btn" id="runCleanup">Jetzt aufräumen</button><button type="button" class="btn" data-close>Schließen</button><button class="btn primary">Speichern</button></div>
     <div><div class="hint" style="margin-bottom:4px">Zuletzt aufgeräumt</div><div class="log" id="cleanLog">–</div></div>
   </form>
+
+  <!-- ---- Abos: Kanäle/Playlists automatisch laden ---- -->
+  <div class="form" data-p="subs" hidden>
+    <div class="hint">Kinbox schaut regelmäßig nach neuen Videos eines Kanals oder einer Playlist (YouTube, TikTok-Profil …) und lädt sie in deine Mediathek.</div>
+    <div class="people" id="subList"></div>
+    <h2 style="margin-top:6px">Abo hinzufügen</h2>
+    <form id="subForm" class="form" style="padding:0">
+      <label>Link zum Kanal oder zur Playlist <input id="subUrl" inputmode="url" placeholder="https://www.youtube.com/@…" required></label>
+      <div class="row">
+        <label>Name (optional) <input id="subName" maxlength="60" placeholder="wie der Kanal"></label>
+        <label>Was? <select id="subPreset"></select></label>
+      </div>
+      <div class="row">
+        <label>Prüfen <select id="subInterval"><option value="1">stündlich</option><option value="3">alle 3 Std.</option><option value="6" selected>alle 6 Std.</option><option value="12">alle 12 Std.</option><option value="24">täglich</option><option value="168">wöchentlich</option></select></label>
+        <label>Höchstens pro Prüfung <input id="subMax" type="number" min="1" max="50" value="5"></label>
+      </div>
+      <label class="switch"><input type="checkbox" id="subFromNow" checked><span></span>Nur Videos ab jetzt (sonst gleich die neuesten laden)</label>
+      <label class="switch"><input type="checkbox" id="subNight"><span></span>Erst nachts laden</label>
+      <div class="row"><button type="button" class="btn" data-close>Schließen</button><button class="btn primary"><svg class="i"><use href="/static/icons.svg#plus"/></svg> Abonnieren</button></div>
+    </form>
+  </div>
 
   <div class="form" data-p="family" hidden>
     <div class="hint">Jede Person hat einen eigenen Bereich, eine eigene Warteschlange und eigene Aufräum-Regeln. Über „Einladen" bekommt jemand einen Link, der ihn direkt anmeldet.</div>
@@ -1182,6 +1204,53 @@ $("#newForm").addEventListener("submit", async (e) => {
   if ($("#newPin").value.trim()) body.pin = $("#newPin").value.trim();
   try { const u = await api("/api/users", { method: "POST", body: JSON.stringify(body) });
     toast(`${u.name} angelegt – jetzt auf „✉ Einladen“ tippen`); $("#newName").value = ""; $("#newPin").value = ""; $("#newAdmin").checked = false; loadPeople();
+  } catch (err) { toast(err.message, true); }
+});
+
+// ---- Abos: Kanäle/Playlists automatisch laden ----------------------------
+let subT;
+$("#subPreset").innerHTML = $("#addPreset").innerHTML;   // gleiche Vorlagen wie „Link herunterladen“
+const SUB_EVERY = { 1: "stündlich", 24: "täglich", 168: "wöchentlich" };
+async function loadSubs() {
+  clearTimeout(subT);
+  let list;
+  try { list = await api("/api/subs"); } catch (e) { return toast(e.message, true); }
+  $("#subList").innerHTML = list.length ? list.map((s) => {
+    const what = $(`#addPreset option[value="${s.preset}"]`)?.textContent || s.preset;
+    const state = s.checking || !s.last_check ? t("Wird geprüft …") : t(`Geprüft ${ago(s.last_check)}`) + (s.last_new ? " · " + t(`${s.last_new} neu`) : "");
+    return `<div class="person" data-id="${esc(s.id)}">
+      <div class="top"><div style="flex:1;min-width:0">
+        <div class="n">${esc(s.name || s.url)}${s.owner !== me.id ? ` <span class="hint">(${esc(s.owner_name)})</span>` : ""}</div>
+        <div class="r">${[esc(what), t(SUB_EVERY[s.interval_h] || `alle ${s.interval_h} Std.`), s.night ? ic("moon") + " " + t("nachts") : "", state].filter(Boolean).join(" · ")}</div>
+        ${s.error ? `<div class="r" style="color:color-mix(in srgb, var(--err) 70%, var(--text))">${esc(s.error)}</div>` : ""}</div></div>
+      <div class="acts">
+        <a class="btn" href="${esc(s.url)}" target="_blank" rel="noopener">${ic("external")} Öffnen</a>
+        <button class="btn" data-a="check" ${s.checking ? "disabled" : ""}>${ic("refresh")} Jetzt prüfen</button>
+        <button class="btn danger" data-a="del">${ic("trash")} Löschen</button>
+      </div></div>`;
+  }).join("") : `<div class="hint">Noch keine Abos.</div>`;
+  if (list.some((s) => s.checking || !s.last_check) && $("#setDlg").open) subT = setTimeout(loadSubs, 2000);
+  else if (list.some((s) => s.last_new)) pollJobs();
+}
+$("#setTabs").addEventListener("click", (e) => { if (e.target.closest('button[data-t="subs"]')) loadSubs(); });
+$("#subList").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-a]"); if (!b) return;
+  const id = b.closest(".person").dataset.id;
+  try {
+    if (b.dataset.a === "check") await api(`/api/subs/${id}/check`, { method: "POST" });
+    if (b.dataset.a === "del") {
+      if (!confirm(t("Abo löschen? Bisher geladene Videos bleiben."))) return;
+      await api(`/api/subs/${id}`, { method: "DELETE" }); toast("Gelöscht");
+    }
+    loadSubs();
+  } catch (err) { toast(err.message, true); }
+});
+$("#subForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = { url: $("#subUrl").value.trim(), name: $("#subName").value.trim(), preset: $("#subPreset").value,
+    interval_h: +$("#subInterval").value, max_items: +$("#subMax").value || 5, from_now: $("#subFromNow").checked, night: $("#subNight").checked };
+  try { await api("/api/subs", { method: "POST", body: JSON.stringify(body) });
+    toast("Abonniert – Kinbox schaut jetzt regelmäßig nach"); $("#subUrl").value = ""; $("#subName").value = ""; loadSubs();
   } catch (err) { toast(err.message, true); }
 });
 

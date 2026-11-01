@@ -162,6 +162,31 @@ export function isSocial(url) {
   try { return SOCIAL_HOSTS.test(new URL(url).hostname); } catch { return false; }
 }
 
+// Content-Skript samt i18n/Icons in einen Tab nachladen, der vor der Erweiterung (oder vor einem Update) offen war.
+export async function injectContent(tabId, script) {
+  const cs = chrome.runtime.getManifest().content_scripts.find((c) => c.js.includes(script));
+  await chrome.scripting.insertCSS({ target: { tabId }, files: cs.css });
+  await chrome.scripting.executeScript({ target: { tabId }, files: cs.js });
+}
+
+// Auf TikTok/Instagram/X/Reddit ist die Adresse im Browser oft nicht die des Videos –
+// das Seiten-Skript kennt das Video, das gerade zu sehen ist.
+export async function mediaUrlForTab(tab, kind = "currentMediaUrl") {
+  if (!tab?.id || !isSocial(tab.url)) return tab?.url;
+  const ask = () => chrome.tabs.sendMessage(tab.id, { type: kind });
+  try {
+    const r = await ask();
+    if (r?.url) return r.url;
+  } catch {
+    try {   // Tab war schon offen, bevor die Erweiterung (neu) geladen wurde
+      await injectContent(tab.id, "content/social.js");
+      const r = await ask();
+      if (r?.url) return r.url;
+    } catch { /* egal (z. B. Android-App: kein chrome.scripting) */ }
+  }
+  return tab.url;
+}
+
 export async function fileUrl(jobId, idx) {
   const s = await getSettings();
   return `${await serverBase(s)}/api/jobs/${jobId}/files/${idx}?token=${encodeURIComponent(s.token)}`;
@@ -217,6 +242,9 @@ export function youtubeId(url) {
 export function playlistId(url) {
   try { return new URL(url).searchParams.get("list"); } catch { return null; }
 }
+
+// Für url('…') in style-Attributen: Zeichen, die aus dem CSS-String ausbrechen könnten, kodieren.
+export const cssUrl = (u) => String(u ?? "").replace(/['"()\\\s]/g, (c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"));
 
 export function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

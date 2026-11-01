@@ -3,8 +3,11 @@
 // Außerdem liefert das Skript dem Popup/Kontextmenü die echte Video-Adresse
 // (auf TikTok & Co. ist die Adresse im Browser oft nicht die des Videos).
 (() => {
-  if (window.__kinboxSocial) return;
-  window.__kinboxSocial = true;
+  // Nach einem Update der Erweiterung ist das alte Skript „verwaist“ (chrome.runtime.id fehlt) –
+  // dann darf das neu nachgeladene übernehmen, sonst nicht doppelt starten.
+  const alive = () => !!chrome.runtime?.id;
+  if (window.__kinboxSocial?.()) return;
+  window.__kinboxSocial = alive;
 
   const host = location.hostname.replace(/^www\./, "").replace(/^m\./, "");
   const SITE = /tiktok\.com$/.test(host) ? "tiktok" : /instagram\.com$/.test(host) ? "instagram"
@@ -72,8 +75,8 @@
     if (SITE === "x") {
       const art = videoEl.closest("article") || ancestors(videoEl).find((a) => a.tagName === "ARTICLE");
       if (art) {
-        const t = art.querySelector("a[href*='/status/'] time")?.closest("a");
-        if (t) return abs(t.getAttribute("href")).replace(/\/(photo|video|analytics)\/\d*$/, "");
+        const a = art.querySelector("a[href*='/status/'] time")?.closest("a");
+        if (a) return abs(a.getAttribute("href")).replace(/\/(photo|video|analytics)\/\d*$/, "");
       }
       const link = findLink(videoEl, /\/status\/\d+/, 30);
       if (link) return link.replace(/\/(photo|video|analytics)\/\d*$/, "");
@@ -170,6 +173,7 @@
     root.classList.toggle("kb-right", pos[1] === "r");
   }
   function show(v) {
+    if (!alive()) { root.remove(); return; }   // verwaist: Knopf gehört jetzt dem neuen Skript
     if (!enabled) return;
     attach();
     clearTimeout(hideTimer);

@@ -1,5 +1,10 @@
 // Fügt auf YouTube einen „Kinbox"-Button unter dem Video ein (mit Schnellmenü).
 (() => {
+  // Nach einem Update ist das alte Skript verwaist (chrome.runtime.id fehlt) – dann übernimmt das neu nachgeladene.
+  const alive = () => !!chrome.runtime?.id;
+  if (window.__kinboxYt?.()) return;
+  window.__kinboxYt = alive;
+  const INST = Math.random().toString(36).slice(2);   // eigener Knopf vs. Knopf eines verwaisten Vorgängers
   const BTN_ID = "kinbox-btn";
   const MENU_ID = "kinbox-menu";
   let presets = [];
@@ -23,17 +28,26 @@
     if (area === "sync" && (c.presets || c.hiddenBuiltins)) presets = [];
   });
 
-  let started = false;
+  let observer = null;
   function start() {
-    if (started) { inject(); return; }
-    started = true;
-    document.addEventListener("yt-navigate-finish", () => setTimeout(inject, 300));
+    if (observer) { inject(); return; }
+    document.addEventListener("yt-navigate-finish", () => { closeMenu(); setTimeout(inject, 300); });
     let pending = null;
-    new MutationObserver(() => {
-      if (pending || document.getElementById(BTN_ID)?.isConnected) return;
+    observer = new MutationObserver(() => {
+      if (pending || (isVideoPage() ? current() : !document.getElementById(BTN_ID))) return;
       pending = setTimeout(() => { pending = null; inject(); }, 400);
-    }).observe(document.documentElement, { childList: true, subtree: true });
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true });
     inject();
+  }
+
+  // Shorts: schwebender Knopf; Video: Knopf in der Leiste unter dem Video
+  const kind = () => (/^\/shorts\//.test(location.pathname) ? "shorts" : "watch");
+  // YouTube wechselt Seiten ohne Neuladen: der Knopf der vorigen Seite bliebe sonst versteckt (Leiste der Watch-Seite
+  // auf Shorts) oder falsch (schwebend auf der Watch-Seite) stehen – dann neu einsetzen.
+  function current() {
+    const el = document.getElementById(BTN_ID);
+    return el?.isConnected && el.dataset.inst === INST && el.dataset.kind === kind() ? el : null;
   }
 
   function isVideoPage() {
@@ -49,15 +63,20 @@
 
   let injecting = false;
   function inject() {
+    if (!alive()) { observer?.disconnect(); return; }
     if (!enabled || injecting) return;
     const existing = document.getElementById(BTN_ID);
     if (!isVideoPage()) { existing?.remove(); return; }
-    if (existing && existing.isConnected) return;
+    if (current()) return;
     injecting = true;
     try {
       const anchor = ANCHORS.map((s) => document.querySelector(s)).find((el) => el && el.offsetParent !== null);
+      if (!anchor && kind() !== "shorts") return; // Seite noch nicht fertig – der Observer versucht es erneut
+      existing?.remove();
       const wrap = document.createElement("div");
       wrap.id = BTN_ID;
+      wrap.dataset.inst = INST;
+      wrap.dataset.kind = kind();
       wrap.innerHTML = `
         <button class="kinbox-main" title="Mit Kinbox herunterladen">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1zM5 19h14a1 1 0 1 1 0 2H5a1 1 0 1 1 0-2z"/></svg>
@@ -67,11 +86,9 @@
       translateEl(wrap);
       if (anchor) {
         anchor.prepend(wrap);
-      } else if (/^\/shorts\//.test(location.pathname)) {
+      } else {
         wrap.classList.add("kinbox-floating");
         document.body.appendChild(wrap);
-      } else {
-        return; // Seite noch nicht fertig – der Observer versucht es erneut
       }
       wrap.querySelector(".kinbox-main").addEventListener("click", (e) => { e.stopPropagation(); quick(null); });
       wrap.querySelector(".kinbox-more").addEventListener("click", (e) => { e.stopPropagation(); toggleMenu(wrap); });
@@ -82,6 +99,7 @@
 
   async function toggleMenu(wrap) {
     if (document.getElementById(MENU_ID)) return closeMenu();
+    if (!alive()) return reloadHint();
     if (!presets.length) {
       const r = await chrome.runtime.sendMessage({ type: "presets" }).catch(() => null);
       presets = r?.presets || [];
@@ -98,6 +116,9 @@
     };
     add("download", "Standard-Einstellungen", () => quick(null));
     for (const p of presets) add(p.icon, p.name, () => quick(p.id));
+    // Video aus einer Playlist: sonst lädt Kinbox nur dieses eine Video (Mixe „RD…“ sind endlos – ausgelassen)
+    const list = new URL(location.href).searchParams.get("list");
+    if (list && !/^RD/.test(list)) add("playlist", "Ganze Playlist laden", () => quick(null, { playlist: "all" }));
     add("sliders", "Mit Optionen … (zuschneiden, Kapitel …)", () => chrome.runtime.sendMessage({ type: "openCustom", url: currentUrl() }), "kinbox-accent");
     // direkt an <body>: YouTubes Knopfleiste schneidet überstehende Elemente ab
     document.body.appendChild(menu);
@@ -124,19 +145,24 @@
     return u.toString();
   }
 
-  async function quick(presetId) {
+  async function quick(presetId, options) {
     const btn = document.querySelector(`#${BTN_ID} .kinbox-main`);
     btn?.classList.add("busy");
     try {
-      const r = await chrome.runtime.sendMessage({ type: "quick", url: currentUrl(), presetId, title: document.title });
+      // Playlist: Titel kommt vom Server (document.title wäre der des aktuellen Videos)
+      const r = await chrome.runtime.sendMessage({ type: "quick", url: currentUrl(), presetId, options, title: options?.playlist ? "" : document.title });
       if (r?.ok) {
         btn?.classList.add("done");
         setTimeout(() => btn?.classList.remove("done"), 2000);
       }
     } catch {
-      alert(t("Kinbox: Erweiterung wurde neu geladen – bitte Seite aktualisieren."));
+      reloadHint();
     } finally {
       btn?.classList.remove("busy");
     }
+  }
+
+  function reloadHint() {
+    alert(t("Kinbox: Erweiterung wurde neu geladen – bitte Seite aktualisieren."));
   }
 })();

@@ -120,6 +120,7 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
   .info { padding: 8px 9px 10px; }
   .info .title { font-size: 13px; }
   .brand span.txt { display: none; }
+  header { position: static; }   /* Kopf mit Suche & Filtern ist am Handy zu hoch zum Kleben */
 }
 
 /* ---- v3: Profile & Familie ---- */
@@ -230,6 +231,17 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
 @media (max-width: 600px) { .selbar [data-bulk=done] { order: -1; } }
 .selbar .btn:disabled { opacity: .45; cursor: default; }
 .renamebox { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+
+/* ---- Komfort: Tastatur, Weiterschauen, Vor/Zurück, Link hineinziehen */
+.card:focus-visible, .album-grid .thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.thumb .prog { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.25); }
+.thumb .prog i { display: block; height: 100%; background: var(--accent); }
+.ptop { display: flex; gap: 8px; align-items: flex-start; }
+.ptop h2 { flex: 1; min-width: 0; word-break: break-word; }
+.ptop .btn { padding: 6px 9px; }
+.ptop .btn:disabled { opacity: .35; cursor: default; }
+.flip .i { transform: scaleX(-1); }
+body.dropping main { outline: 3px dashed var(--accent); outline-offset: -6px; border-radius: min(14px, var(--round)); }
 </style>
 </head>
 <body>
@@ -263,15 +275,16 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
       <button data-s="family"><svg class="i"><use href="/static/icons.svg#users"/></svg> Familie <b id="famCount" hidden></b></button>
       <button data-s="all" id="scopeAll" hidden>Alle</button>
     </div>
-    <select id="ownerFilter" hidden><option value="">Alle Personen</option></select>
-    <input type="search" id="q" placeholder="Suchen …">
+    <select id="ownerFilter" hidden aria-label="Person"><option value="">Alle Personen</option></select>
+    <input type="search" id="q" placeholder="Suchen …" aria-label="Suchen" title="Suchen (Taste /)">
     <div class="chips" id="kinds">
       <button class="chip active" data-k="">Alle</button><button class="chip" data-k="video">Video</button>
       <button class="chip" data-k="audio">Audio</button><button class="chip" data-k="gif">GIF</button><button class="chip" data-k="image">Bilder</button>
     </div>
-    <select id="sort">
-      <option value="new">Neueste</option><option value="old">Älteste</option><option value="big">Größte</option><option value="name">Name</option>
+    <select id="sort" aria-label="Sortierung">
+      <option value="new">Neueste</option><option value="old">Älteste</option><option value="big">Größte</option><option value="long">Längste</option><option value="name">Name</option>
     </select>
+    <select id="site" aria-label="Seite" hidden></select>
     <button class="btn" id="selBtn"><svg class="i"><use href="/static/icons.svg#check"/></svg> Auswählen</button>
     <div class="chips colls" id="colls"></div>
   </div>
@@ -302,7 +315,7 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
   <div class="form">
     <h2>Zur Sammlung</h2>
     <div class="coll-list" id="collList"></div>
-    <form class="copy" id="collNew"><input id="collName" style="font:inherit" placeholder="Neue Sammlung, z. B. Kinderlieder" maxlength="60"><button class="btn"><svg class="i"><use href="/static/icons.svg#plus"/></svg></button></form>
+    <form class="copy" id="collNew"><input id="collName" style="font:inherit" placeholder="Neue Sammlung, z. B. Kinderlieder" maxlength="60" aria-label="Neue Sammlung"><button class="btn" aria-label="Sammlung anlegen" title="Sammlung anlegen"><svg class="i"><use href="/static/icons.svg#plus"/></svg></button></form>
     <button class="btn primary" id="collDone">Fertig</button>
   </div>
 </dialog>
@@ -312,7 +325,9 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
   <button class="close" id="closePlayer" aria-label="Schließen"><svg class="i"><use href="/static/icons.svg#x"/></svg></button>
   <div class="media" id="media"></div>
   <div class="dlg-body">
-    <h2 id="pTitle"></h2>
+    <div class="ptop"><h2 id="pTitle"></h2>
+      <button class="btn" id="pPrev" aria-label="Vorheriges" title="Vorheriges (P)"><svg class="i"><use href="/static/icons.svg#back"/></svg></button>
+      <button class="btn flip" id="pNext" aria-label="Nächstes" title="Nächstes (N)"><svg class="i"><use href="/static/icons.svg#back"/></svg></button></div>
     <div class="meta" id="pMeta"></div>
     <div class="actions">
       <a class="btn primary" id="pDownload"><svg class="i"><use href="/static/icons.svg#download"/></svg> Auf dieses Gerät</a>
@@ -496,7 +511,7 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
   </form>
 </dialog>
 
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="/static/i18n.js" data-auto></script>
 <script>
@@ -521,7 +536,9 @@ let token = store.get("kinbox_token");
 let me = null, isAdmin = false;
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, { ...opts, headers: { "X-Token": token, Accept: "application/json", ...(opts.body ? { "Content-Type": "application/json" } : {}), ...(opts.headers || {}) } });
+  let res;
+  try { res = await fetch(path, { ...opts, headers: { "X-Token": token, Accept: "application/json", ...(opts.body ? { "Content-Type": "application/json" } : {}), ...(opts.headers || {}) } }); }
+  catch { throw new Error(t("Server nicht erreichbar.")); }   // statt „Failed to fetch“
   let data = null; try { data = await res.json(); } catch {}
   if (res.status === 401) { token = ""; store.set("kinbox_token", ""); showPicker(); throw new Error("Bitte Profil wählen"); }
   if (!res.ok) throw new Error(data?.error || "HTTP " + res.status);
@@ -536,13 +553,16 @@ async function showPicker() {
   clearTimeout(pollT);
   $("#picker").hidden = false; $("#pickList").hidden = false; $("#pickPin").hidden = true;
   $$("dialog[open]").forEach((d) => d.close());
+  setInert(true);   // sonst landen Tastendrücke (PIN!) im Suchfeld dahinter
   try {
     const list = await (await fetch("/api/profiles")).json();
     $("#profiles").innerHTML = list.map((u) => `<button class="profile" data-id="${esc(u.id)}">${avatar(u, "lg")}<span>${esc(u.name)}</span>${u.has_pin ? `<span class="lock">${ic("lock")}</span>` : ""}</button>`).join("");
     $("#profiles").onclick = (e) => { const b = e.target.closest(".profile"); if (b) choose(list.find((u) => u.id === b.dataset.id)); };
     $("#pickHint").textContent = list.length === 1 ? "Weitere Personen legt der Admin unter ⚙ → Familie an." : "";
   } catch { $("#profiles").innerHTML = `<div class="hint">Server nicht erreichbar.</div>`; }
+  $("#profiles .profile")?.focus();
 }
+function setInert(on) { for (const el of $$("body > header, body > main, #selBar")) el.inert = on; }
 async function choose(u) {
   pickUser = u; pin = "";
   applyLook(u.look);
@@ -551,9 +571,10 @@ async function choose(u) {
   $("#pinAv").outerHTML = `<div class="av lg" id="pinAv" style="--c:${esc(u.color)}">${esc(u.avatar)}</div>`;
   $("#pinName").textContent = u.name;
   drawDots();
+  document.activeElement?.blur();   // Ziffern/Enter gehen an den PIN-Handler, nicht an einen Knopf
 }
 function drawDots() { $("#dots").innerHTML = Array.from({ length: Math.max(4, pin.length) }, (_, i) => `<i class="${i < pin.length ? "on" : ""}"></i>`).join(""); }
-$("#pad").innerHTML = [1,2,3,4,5,6,7,8,9,"⌫",0,"✓"].map((k) => `<button data-k="${k}" aria-label="${k}">${k === "⌫" ? ic("backspace") : k === "✓" ? ic("check") : k}</button>`).join("");
+$("#pad").innerHTML = [1,2,3,4,5,6,7,8,9,"⌫",0,"✓"].map((k) => `<button data-k="${k}" aria-label="${k === "⌫" ? "Löschen" : k === "✓" ? "OK" : k}">${k === "⌫" ? ic("backspace") : k === "✓" ? ic("check") : k}</button>`).join("");
 $("#pad").addEventListener("click", (e) => {
   const k = e.target.closest("button")?.dataset.k; if (k == null) return;
   if (k === "⌫") pin = pin.slice(0, -1);
@@ -565,15 +586,21 @@ document.addEventListener("keydown", (e) => {
   if ($("#pickPin").hidden || $("#picker").hidden) return;
   if (/^\d$/.test(e.key) && pin.length < 8) { pin += e.key; drawDots(); }
   else if (e.key === "Backspace") { pin = pin.slice(0, -1); drawDots(); }
-  else if (e.key === "Enter" && pin.length >= 4) login(pin);
+  else if (e.key === "Enter" && pin.length >= 4) { e.preventDefault(); login(pin); }
+  else if (e.key === "Escape") showPicker();
 });
 $("#pinBack").addEventListener("click", showPicker);
 async function login(p) {
-  const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pickUser.id, pin: p }) });
+  let res;
+  try { res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pickUser.id, pin: p }) }); }
+  catch { return toast("Server nicht erreichbar.", true); }
   const d = await res.json().catch(() => ({}));
   if (!res.ok) { pin = ""; drawDots(); $("#dots").classList.remove("shake"); void $("#dots").offsetWidth; $("#dots").classList.add("shake"); return toast(d.error || "Fehler", true); }
   token = d.token; store.set("kinbox_token", token);
-  $("#picker").hidden = true;
+  $("#picker").hidden = true; setInert(false);
+  // Zustand des vorherigen Profils verwerfen
+  sel = null; pin = ""; $("#q").value = ""; $("#site").value = ""; $("#jobs").innerHTML = ""; lastActive = 0;
+  $("#ownerFilter").innerHTML = `<option value="">Alle Personen</option>`;
   scope = "mine"; load(); pollJobs();
 }
 
@@ -582,12 +609,19 @@ let items = [], kind = "", data = null, scope = "mine";
 let favs = new Set(), colls = [], sel = null;   // sel: Set der ausgewählten Karten (Mehrfachauswahl), sonst null
 async function load() {
   if (!token) return showPicker();
-  try { data = await api(`/api/library?scope=${encodeURIComponent(scope)}&owner=${encodeURIComponent($("#ownerFilter").value)}`); } catch (e) { return; }
+  try { data = await api(`/api/library?scope=${encodeURIComponent(scope)}&owner=${encodeURIComponent($("#ownerFilter").value)}`); }
+  catch (e) { if (token) toast(e.message, true); return; }
   me = data.user; isAdmin = data.is_admin;
   applyLook(me.look);
+  loadPos();
   items = data.items;
   favs = new Set(data.favs || []); colls = data.collections || [];
   if (scope.startsWith("coll:") && !colls.some((c) => "coll:" + c.id === scope)) { scope = "mine"; return load(); }
+  // Auswahl auf das beschränken, was hier noch zu sehen ist (sonst wirken Aktionen auf unsichtbare Einträge)
+  if (sel) sel = new Set([...sel].filter((k) => items.some((x) => k.startsWith("a:") ? x.album === k.slice(2) : x.id === k)));
+  const sites = [...new Set(items.map((e) => e.extractor).filter(Boolean))].sort(), site = $("#site").value;
+  $("#site").innerHTML = `<option value="">Alle Seiten</option>` + sites.map((s) => `<option${s === site ? " selected" : ""}>${esc(s)}</option>`).join("");
+  $("#site").hidden = sites.length < 2;
   drawColls();
   $("#whoAv").outerHTML = `<span class="av" id="whoAv" style="--c:${esc(me.color)}">${esc(me.avatar)}</span>`;
   $("#whoName").textContent = me.name;
@@ -622,10 +656,12 @@ function renderCleanupNotice() {
 document.addEventListener("click", (e) => { const a = e.target.closest("[data-open-settings]"); if (a) { e.preventDefault(); openSettings(a.dataset.openSettings); } });
 
 function render() {
-  const q = $("#q").value.trim().toLowerCase();
-  let list = items.filter((e) => (!kind || e.kind === kind) && (!q || `${e.title} ${e.name} ${e.uploader} ${e.folder} ${e.owner_name}`.toLowerCase().includes(q)));
+  const q = $("#q").value.trim().toLowerCase(), site = $("#site").hidden ? "" : $("#site").value;
+  let list = items.filter((e) => (!kind || e.kind === kind) && (!site || e.extractor === site)
+    && (!q || `${e.title} ${e.name} ${e.uploader} ${e.folder} ${e.owner_name} ${e.extractor}`.toLowerCase().includes(q)));
   const s = $("#sort").value;
-  list.sort((a, b) => s === "old" ? a.added - b.added : s === "big" ? b.size - a.size : s === "name" ? a.title.localeCompare(b.title) : b.added - a.added);
+  list.sort((a, b) => s === "old" ? a.added - b.added : s === "big" ? b.size - a.size : s === "long" ? (b.duration || 0) - (a.duration || 0)
+    : s === "name" ? String(a.title).localeCompare(String(b.title)) : b.added - a.added);
   $("#empty").hidden = list.length > 0;
   // Foto-Beiträge mit mehreren Dateien als eine Album-Karte
   const groups = {}, seen = new Set();
@@ -642,8 +678,9 @@ function render() {
     const icon = !bg ? ic(e.kind === "audio" ? "music" : e.kind === "video" ? "play" : "file") : "";
     const mine = e.owner === me.id;
     const warn = e.delete_at ? `<div class="warn">Wird gleich gelöscht</div>` : "";
-    return `<div class="card${sel?.has(e.id) ? " sel" : ""}" data-id="${e.id}">
-      <div class="thumb" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${icon}${sel ? tick : ""}
+    const p = pos[e.id] && e.duration ? Math.min(100, pos[e.id] / e.duration * 100) : 0;
+    return `<div class="card${sel?.has(e.id) ? " sel" : ""}" data-id="${esc(e.id)}" tabindex="0" role="button"${sel ? ` aria-pressed="${sel.has(e.id)}"` : ""}>
+      <div class="thumb" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${icon}${sel ? tick : ""}${p ? `<span class="prog" title="Angefangen"><i style="width:${p}%"></i></span>` : ""}
         <span class="kind"${sel ? " hidden" : ""}>${KIND[e.kind] || "Datei"}</span>${e.pinned ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
         ${e.shared && mine ? `<span class="shr" title="Mit der Familie geteilt">${ic("users")}</span>` : ""}
         ${!mine ? `<span class="av owner" title="${esc(e.owner_name)}">${esc(e.owner_avatar)}</span>` : ""}
@@ -656,7 +693,9 @@ function render() {
 const tick = `<span class="tick">${ic("check")}</span>`;
 const favMark = `<span class="favmark" title="Favorit">${ic("star")}</span>`;
 $("#q").addEventListener("input", render);
-$("#sort").addEventListener("change", render);
+$("#sort").value = store.get("kinbox_sort") || "new";
+$("#sort").addEventListener("change", () => { store.set("kinbox_sort", $("#sort").value); render(); });
+$("#site").addEventListener("change", render);
 $("#kinds").addEventListener("click", (e) => {
   const b = e.target.closest(".chip"); if (!b) return;
   kind = b.dataset.k;
@@ -677,8 +716,15 @@ $("#ownerFilter").addEventListener("change", load);
 let current = null;
 $("#grid").addEventListener("click", (e) => {
   const c = e.target.closest(".card"); if (!c) return;
-  if (sel) { const k = c.dataset.album ? "a:" + c.dataset.album : c.dataset.id; sel.has(k) ? sel.delete(k) : sel.add(k); return render(); }
+  if (sel) {
+    const k = c.dataset.album ? "a:" + c.dataset.album : c.dataset.id; sel.has(k) ? sel.delete(k) : sel.add(k); render();
+    return $(c.dataset.album ? `#grid [data-album="${CSS.escape(c.dataset.album)}"]` : `#grid [data-id="${CSS.escape(k)}"]`)?.focus();
+  }
   if (c.dataset.album) openAlbum(c.dataset.album); else openPlayer(items.find((x) => x.id === c.dataset.id));
+});
+// Karten sind <div role="button"> – mit Enter/Leertaste bedienbar machen
+for (const g of ["#grid", "#aGrid"]) $(g).addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[role=button]")) { e.preventDefault(); e.target.click(); }
 });
 
 // ---- Album: alle Dateien eines Foto-Beitrags --------------------------------
@@ -688,7 +734,7 @@ const albumTitle = (e) => e.title.replace(/ \(\d+\/\d+\)$/, "");
 function albumCard(e) {
   const all = albumItems(e.album), cover = all.find((x) => x.kind === "image") || all[0], mine = e.owner === me.id;
   const imgs = all.filter((x) => x.kind === "image").length, size = all.reduce((n, x) => n + (x.size || 0), 0);
-  return `<div class="card${sel?.has("a:" + e.album) ? " sel" : ""}" data-album="${esc(e.album)}">
+  return `<div class="card${sel?.has("a:" + e.album) ? " sel" : ""}" data-album="${esc(e.album)}" tabindex="0" role="button"${sel ? ` aria-pressed="${sel.has("a:" + e.album)}"` : ""}>
     <div class="thumb" style="background-image:url('${esc(thumbOf(cover))}')">${sel ? tick : ""}
       <span class="kind"${sel ? " hidden" : ""}>Album</span>${all.some((x) => x.pinned) ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
       ${e.shared && mine ? `<span class="shr" title="Mit der Familie geteilt">${ic("users")}</span>` : ""}
@@ -705,7 +751,7 @@ function openAlbum(id) {
   $("#aTitle").textContent = albumTitle(c);
   $("#aMeta").textContent = [c.uploader, fmtBytes(all.reduce((n, x) => n + (x.size || 0), 0)), ago(c.added), c.folder].filter(Boolean).join(" · ");
   $("#aGrid").innerHTML = all.map((x) => { const bg = thumbOf(x);
-    return `<div class="thumb" data-id="${x.id}" title="${esc(x.name)}" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${bg ? "" : ic(x.kind === "audio" ? "music" : "file")}</div>`; }).join("");
+    return `<div class="thumb" data-id="${esc(x.id)}" tabindex="0" role="button" aria-label="${esc(x.name)}" title="${esc(x.name)}" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${bg ? "" : ic(x.kind === "audio" ? "music" : "file")}</div>`; }).join("");
   $("#aDownload").innerHTML = `${ic("download")} Alle aufs Gerät (${all.length})`;
   $("#aSource").href = c.url || "#";
   $("#aSource").hidden = !c.url || !/^https?:/.test(c.url);
@@ -726,6 +772,8 @@ $("#aDownload").addEventListener("click", async () => {
 $("#closeAlbum").addEventListener("click", () => $("#albumDlg").close());
 $("#albumDlg").addEventListener("click", (e) => { if (e.target === $("#albumDlg")) $("#albumDlg").close(); });
 function openPlayer(e) {
+  if (!e) return;
+  stopMedia();
   current = e;
   const src = fileUrl(e.id, "stream"), m = $("#media");
   if (e.kind === "video") m.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline poster="${esc(thumbOf(e))}"></video>`;
@@ -750,15 +798,69 @@ function openPlayer(e) {
   $("#pDelete").textContent = "Löschen"; delete $("#pDelete").dataset.sure;
   $("#pEdit").hidden = !canEdit || !["video", "audio"].includes(e.kind);
   $("#editBox").hidden = true; $("#eStart").value = $("#eEnd").value = "";
-  m.querySelector("video, audio")?.addEventListener("loadedmetadata", () => { if (!$("#editBox").hidden) setupRange(); });
-  $("#playerDlg").showModal();
+  const el = m.querySelector("video, audio"), resume = pos[e.id];
+  el?.addEventListener("loadedmetadata", () => {
+    if (!$("#editBox").hidden) setupRange();
+    if (resume && resume < el.duration - 10) { el.currentTime = resume; toast(`Weiter bei ${fmtDur(resume)}`); }
+  });
+  el?.addEventListener("timeupdate", () => { if (Math.abs(el.currentTime - (pos[e.id] || 0)) >= 3) savePos(e, el); });
+  el?.addEventListener("pause", () => savePos(e, el));
+  el?.addEventListener("ended", () => { savePos(e, null); const n = neighbor(1); if (e.kind === "audio" && n?.kind === "audio") openPlayer(n); });
+  drawNav();
+  if (!$("#playerDlg").open) $("#playerDlg").showModal();
+  $("#playerDlg").scrollTop = 0;
+  el?.focus();   // Tastenkürzel sofort nutzbar (sonst hat „Schließen“ den Fokus)
 }
+// Weiterschauen: Position pro Eintrag in diesem Browser merken (je Profil)
+let pos = {};
+const posKey = () => "kinbox_pos_" + (me?.id || "");
+function loadPos() { try { pos = JSON.parse(store.get(posKey()) || "{}"); } catch { pos = {}; } }
+function savePos(e, el) {
+  const sec = el ? el.currentTime : 0, dur = (el && el.duration) || e.duration;
+  if (sec > 5 && sec < dur - 10) pos[e.id] = Math.round(sec); else delete pos[e.id];
+  store.set(posKey(), JSON.stringify(pos));
+}
+function stopMedia() { const el = mediaEl(); if (el && current) savePos(current, el); $("#media").innerHTML = ""; }
+// Vorheriges/Nächstes: Reihenfolge wie in der Mediathek bzw. im offenen Album
+function neighbor(dir) {
+  const ids = $("#albumDlg").open && current.album ? albumItems(current.album).map((x) => x.id) : $$("#grid .card[data-id]").map((c) => c.dataset.id);
+  const i = ids.indexOf(current.id);
+  return i < 0 ? null : items.find((x) => x.id === ids[i + dir]);
+}
+function drawNav() {
+  const p = neighbor(-1), n = neighbor(1);
+  $("#pPrev").disabled = !p; $("#pNext").disabled = !n;
+  $("#pPrev").hidden = $("#pNext").hidden = !p && !n;
+}
+$("#pPrev").addEventListener("click", () => openPlayer(neighbor(-1)));
+$("#pNext").addEventListener("click", () => openPlayer(neighbor(1)));
+// Tasten: Leertaste/K Pause · ←/→ 5 s · J/L 10 s · M Ton · F Vollbild · N/P Nächstes/Vorheriges (Bilder: ←/→)
+$("#playerDlg").addEventListener("keydown", (ev) => {
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest("input, select, textarea")) return;
+  const m = mediaEl(), k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
+  let n;
+  if (k === "n" || (!m && k === "ArrowRight")) n = neighbor(1);
+  else if (k === "p" || (!m && k === "ArrowLeft")) n = neighbor(-1);
+  else if (!m) return;
+  else if (k === " " && ev.target.closest("button, a, video, audio")) return;   // Knopf drücken bzw. Browser schaltet selbst um
+  else if (k === "k" || k === " ") m.paused ? m.play().catch(() => {}) : m.pause();
+  else if (k === "ArrowLeft" || k === "j") m.currentTime = Math.max(0, m.currentTime - (k === "j" ? 10 : 5));
+  else if (k === "ArrowRight" || k === "l") m.currentTime += k === "l" ? 10 : 5;
+  else if (k === "m") m.muted = !m.muted;
+  else if (k === "f" && m.tagName === "VIDEO") document.fullscreenElement ? document.exitFullscreen() : m.requestFullscreen?.();
+  else return;
+  ev.preventDefault();
+  if (n) openPlayer(n);
+});
 function drawShare() { $("#pShare").innerHTML = ic(current.shared ? "check" : "users") + " " + (current.shared ? "Geteilt" : "Mit Familie teilen"); }
 function drawPin() { $("#pPin").innerHTML = ic("pin") + " " + (current.pinned ? "Behalten (an)" : "Behalten"); }
 function drawFav() { const on = favs.has(current.id); $("#pFav").innerHTML = (on ? favMark : ic("star") + " ") + (on ? "Favorit (an)" : "Favorit"); }
-function closePlayer() { $("#media").innerHTML = ""; $("#playerDlg").close(); }
+function closePlayer() { $("#playerDlg").close(); }
 $("#closePlayer").addEventListener("click", closePlayer);
-$("#playerDlg").addEventListener("close", () => { $("#media").innerHTML = ""; });
+$("#playerDlg").addEventListener("close", () => {
+  stopMedia(); render();   // Fortschrittsbalken aktualisieren
+  if (!$("#albumDlg").open) $(`#grid [data-id="${CSS.escape(current.id)}"]`)?.focus();
+});
 $("#playerDlg").addEventListener("click", (e) => { if (e.target === $("#playerDlg")) closePlayer(); });
 $("#pShare").addEventListener("click", async () => {
   try { const r = await api(`/api/library/${current.id}/share`, { method: "POST", body: JSON.stringify({ shared: !current.shared }) });
@@ -890,7 +992,8 @@ $("#collNew").addEventListener("submit", async (e) => {
   const name = $("#collName").value.trim(); if (!name) return;
   try { const c = await api("/api/collections", { method: "POST", body: JSON.stringify({ name }) }); colls.push(c); $("#collName").value = ""; await toggleColl(c); } catch (err) { toast(err.message, true); }
 });
-$("#collDone").addEventListener("click", () => { $("#collDlg").close(); if (scope.startsWith("coll:")) load(); });
+$("#collDone").addEventListener("click", () => $("#collDlg").close());
+$("#collDlg").addEventListener("close", () => { if (scope.startsWith("coll:")) load(); });   // auch bei Escape
 
 // ---- Nachträglich bearbeiten (läuft als Auftrag auf dem Server) ----------
 let eOp = "cut";
@@ -918,7 +1021,7 @@ $("#pEdit").addEventListener("click", () => {
 $("#editOps").addEventListener("click", (e) => { const c = e.target.closest("[data-op]"); if (c) { eOp = c.dataset.op; drawEdit(); } });
 // Zuschneiden: Doppel-Regler ⇄ Felder, Ziehen springt im Player mit
 const tfmt = (s) => Math.floor(s / 60) + ":" + (s % 60).toFixed(1).padStart(4, "0");
-const tparse = (v) => v.trim() ? v.split(":").reduce((a, x) => a * 60 + parseFloat(x || 0), 0) : null;
+const tparse = (v) => { const s = v.trim() ? v.split(":").reduce((a, x) => a * 60 + parseFloat(x || 0), 0) : NaN; return isFinite(s) ? s : null; };
 const mediaEl = () => $("#media video, #media audio");
 function drawRange() {
   const d = +$("#rS").max, a = +$("#rS").value / d * 100, b = +$("#rE").value / d * 100;
@@ -954,17 +1057,41 @@ $("#eGo").addEventListener("click", async () => {
   const body = { op: eOp, keep: $("#eKeep").checked, start: $("#eStart").value.trim(), end: $("#eEnd").value.trim(),
     format: $("#eFormat").value, bitrate: $("#eBitrate").value, gifFps: +$("#eFps").value, gifWidth: +$("#eWidth").value,
     targetMB: +$("#eMB").value, angle: $("#eAngle").value };
+  $("#eGo").disabled = true;
   try { await api(`/api/library/${current.id}/edit`, { method: "POST", body: JSON.stringify(body) });
     closePlayer(); toast("Wird bearbeitet – erscheint gleich in der Mediathek"); pollJobs();
   } catch (err) { toast(err.message, true); }
+  finally { $("#eGo").disabled = false; }
 });
 
 // ---- Link hinzufügen ----------------------------------------------------
 const shortcut = () => `${location.origin}/api/add?token=${token}&preset=${$("#addPreset").value}&url=[LINK]`;
-$("#addBtn").addEventListener("click", async () => {
+async function openAdd(url = "") {
   $("#shortcutUrl").value = shortcut();
+  if (url) $("#addUrl").value = url;
   $("#addDlg").showModal(); $("#addUrl").focus();
-  try { const t = await navigator.clipboard.readText(); if (/^https?:\/\//.test(t.trim()) && !$("#addUrl").value) $("#addUrl").value = t.trim(); } catch {}
+  if (!url) try { const clip = (await navigator.clipboard.readText()).trim(); if (/^https?:\/\//.test(clip) && !$("#addUrl").value) $("#addUrl").value = clip; } catch {}
+}
+$("#addBtn").addEventListener("click", () => openAdd());
+// Link aus einem anderen Fenster in die Mediathek ziehen oder mit Strg+V einfügen → Download-Dialog
+function offerLink(text) {
+  const url = String(text || "").split(/\s+/).find((x) => /^https?:\/\/\S+$/i.test(x));
+  if (!url || !token || !$("#picker").hidden || $("dialog[open]")) return false;
+  openAdd(url); return true;
+}
+const isLinkDrag = (e) => [...e.dataTransfer.types].some((x) => x === "text/uri-list" || x === "text/plain");
+document.addEventListener("dragover", (e) => { if (isLinkDrag(e) && !$("dialog[open]")) { e.preventDefault(); document.body.classList.add("dropping"); } });
+document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) document.body.classList.remove("dropping"); });
+document.addEventListener("drop", (e) => {
+  document.body.classList.remove("dropping");
+  if (offerLink(e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain"))) e.preventDefault();
+});
+document.addEventListener("paste", (e) => { if (!e.target.closest?.("input, textarea") && offerLink(e.clipboardData.getData("text"))) e.preventDefault(); });
+// „/“ springt in die Suche, Escape beendet die Mehrfachauswahl
+document.addEventListener("keydown", (e) => {
+  if ($("dialog[open]") || !$("#picker").hidden || e.target.closest?.("input, select, textarea")) return;
+  if (e.key === "/") { e.preventDefault(); $("#q").focus(); }
+  else if (e.key === "Escape" && sel) { sel = null; render(); }
 });
 $("#addCancel").addEventListener("click", () => $("#addDlg").close());
 $("#addPreset").addEventListener("change", () => { $("#shortcutUrl").value = shortcut(); });
@@ -985,10 +1112,10 @@ document.addEventListener("click", (e) => { const b = e.target.closest("[data-co
 
 // ---- Einstellungen ------------------------------------------------------
 let prof = {};
-function showTab(t) {
-  $$("#setTabs button").forEach((b) => b.classList.toggle("active", b.dataset.t === t));
-  $$("#setDlg [data-p]").forEach((p) => p.hidden = p.dataset.p !== t);
-  if (t === "family") loadPeople();
+function showTab(tab) {
+  $$("#setTabs button").forEach((b) => b.classList.toggle("active", b.dataset.t === tab));
+  $$("#setDlg [data-p]").forEach((p) => p.hidden = p.dataset.p !== tab);
+  if (tab === "family") loadPeople();
 }
 $("#setTabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-t]"); if (b) showTab(b.dataset.t); });
 $$("#setDlg [data-close]").forEach((b) => b.addEventListener("click", () => $("#setDlg").close()));
@@ -1204,7 +1331,7 @@ async function pollJobs() {
 }
 
 let toastT;
-function toast(t, err = false) { const el = $("#toast"); el.textContent = t; el.className = "toast" + (err ? " err" : ""); el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 3000); }
+function toast(msg, err = false) { const el = $("#toast"); el.textContent = msg; el.className = "toast" + (err ? " err" : ""); el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 3000); }
 
 if (token) { load(); pollJobs(); } else showPicker();
 </script>

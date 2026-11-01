@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Langes Tippen aufs App-Symbol → „Aus Zwischenablage“: kopierten Link direkt im Popup öffnen -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="paste"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/paste_short"
+        android:shortcutLongLabel="@string/paste_long">
+        <intent
+            android:action="io.github.b4turnatur.kinbox.PASTE"
+            android:targetPackage="io.github.b4turnatur.kinbox"
+            android:targetClass="io.github.b4turnatur.kinbox.MainActivity" />
+    </shortcut>
+</shortcuts>

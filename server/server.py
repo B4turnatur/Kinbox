@@ -27,7 +27,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.15.0"
+APP_VERSION = "3.16.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -2331,7 +2331,8 @@ def library_list():
         u = me()
         return jsonify(items=[lib_public(e) for e in items], stats=lib_stats(uid), user=user_public(u, private=True),
                        is_admin=is_admin(), usage=user_usage(uid), quota_gb=u.get("quota_gb", 0),
-                       cleanup=u.get("cleanup"), cleanup_log=_my_log(20), favs=[i for i in u.get("favs") or [] if i in LIB],
+                       cleanup=u.get("cleanup"), cleanup_log=_my_log(20),
+                       pos={i: s for i, s in (u.get("pos") or {}).items() if i in LIB}, favs=[i for i in u.get("favs") or [] if i in LIB],
                        collections=[{**c, "items": [i for i in c["items"] if i in LIB]} for c in u.get("collections") or []],
                        family_count=sum(1 for e in LIB.values() if e.get("shared") and Path(e["path"]).exists()))
 
@@ -2404,6 +2405,119 @@ def library_rename(eid):
         e["title"] = title
     lib_save()
     return jsonify(lib_public(e))
+
+
+# ---- Player: Kapitel, Untertitel, Weiterschauen auf allen Geräten ----------------
+EXTRAS_CACHE: dict[str, tuple] = {}     # Eintrag → ((Pfad, Änderungszeit), Kapitel/Untertitel)
+VTT_CACHE: dict[tuple, bytes] = {}
+SUB_EXT = (".vtt", ".srt", ".ass")
+TEXT_SUBS = ("subrip", "ass", "ssa", "mov_text", "webvtt", "text")     # Bild-Untertitel (PGS/DVD) kann der Browser nicht
+POS_MAX = 300
+NOWIN = {"creationflags": 0x08000000} if IS_WINDOWS else {}
+
+
+def media_extras(e: dict) -> dict:
+    """Kapitel und Untertitel einer Datei: eingebettete (ffprobe) + Untertitel-Dateien daneben („Titel.de.srt“)."""
+    p = Path(e["path"])
+    try:
+        key = (str(p), p.stat().st_mtime)
+    except OSError:
+        return {"chapters": [], "subs": []}
+    hit = EXTRAS_CACHE.get(e["id"])
+    if hit and hit[0] == key:
+        return hit[1]
+    chapters, subs = [], []
+    if e.get("kind") in ("video", "audio"):
+        try:
+            r = subprocess.run([ffmpeg_bin("ffprobe"), "-v", "error", "-show_entries",
+                                "chapter=start_time:chapter_tags=title:stream=codec_type,codec_name:stream_tags=language,title",
+                                "-of", "json", str(p)], capture_output=True, timeout=60, **NOWIN)
+            d = json.loads(r.stdout.decode("utf-8", "replace"))
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            d = {}
+        for c in d.get("chapters") or []:
+            try:
+                chapters.append({"title": str((c.get("tags") or {}).get("title") or "")[:200],
+                                 "start": round(float(c.get("start_time") or 0), 2)})
+            except (TypeError, ValueError):
+                pass
+        n = 0       # Zähler über alle Untertitel-Spuren – ffmpeg wählt sie mit 0:s:<n>
+        for s in d.get("streams") or []:
+            if s.get("codec_type") != "subtitle":
+                continue
+            if s.get("codec_name") in TEXT_SUBS:
+                tags = s.get("tags") or {}
+                subs.append({"src": n, "lang": str(tags.get("language") or "")[:20], "label": str(tags.get("title") or "")[:60]})
+            n += 1
+        if e.get("kind") == "video":
+            try:
+                near = sorted(f for f in p.parent.iterdir() if f.name.startswith(p.stem + ".") and f.suffix.lower() in SUB_EXT)
+            except OSError:
+                near = []
+            for f in near[:20]:
+                subs.append({"src": f.name, "lang": f.name[len(p.stem) + 1:-len(f.suffix)].strip(".")[:20], "label": ""})
+    x = {"chapters": chapters if len(chapters) > 1 else [], "subs": subs}
+    if len(EXTRAS_CACHE) > 500:
+        EXTRAS_CACHE.clear()
+    EXTRAS_CACHE[e["id"]] = (key, x)
+    return x
+
+
+@app.get("/api/library/<eid>/extras")
+def library_extras(eid):
+    x = media_extras(_entry(eid))
+    return jsonify(chapters=x["chapters"], subs=[{"lang": s["lang"], "label": s["label"]} for s in x["subs"]])
+
+
+@app.get("/api/library/<eid>/subs/<int:idx>")
+def library_subs(eid, idx):
+    """Untertitel als WebVTT – das einzige Format, das der Browser im Player anzeigt."""
+    e = _entry(eid)
+    subs = media_extras(e)["subs"]
+    if not 0 <= idx < len(subs):
+        abort(404)
+    p, src = Path(e["path"]), subs[idx]["src"]
+    key = (eid, idx, (EXTRAS_CACHE.get(eid) or [None])[0])
+    vtt = VTT_CACHE.get(key)
+    if vtt is None:
+        inp = ["-i", str(p), "-map", f"0:s:{src}"] if isinstance(src, int) else ["-i", str(p.parent / src)]
+        try:
+            r = subprocess.run([ffmpeg_bin("ffmpeg"), "-v", "error", "-nostdin"] + inp + ["-f", "webvtt", "-"],
+                               capture_output=True, timeout=180, **NOWIN)
+        except (OSError, subprocess.TimeoutExpired):
+            abort(404)
+        vtt = r.stdout
+        if r.returncode or not vtt.lstrip(b"\xef\xbb\xbf").startswith(b"WEBVTT"):
+            abort(404)
+        if len(VTT_CACHE) > 20:
+            VTT_CACHE.clear()
+        VTT_CACHE[key] = vtt
+    resp = Response(vtt, mimetype="text/vtt")
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
+
+
+@app.post("/api/library/pos")
+def library_pos():
+    """{id, pos}: Abspielposition in Sekunden merken (pro Person, für alle Geräte); 0 = vergessen."""
+    body = json_body()
+    eid, sec = body.get("id"), body.get("pos")
+    if not isinstance(eid, str) or isinstance(sec, bool) or not isinstance(sec, (int, float)) or not 0 <= sec < 1e6:
+        return err("Ungültige Position")
+    with LIB_LOCK:
+        e = LIB.get(eid)
+        if not e or not _readable(e):
+            abort(404)
+    with USERS_LOCK:
+        u = me()
+        pos = {k: v for k, v in (u.get("pos") or {}).items() if k != eid}
+        if sec >= 1:
+            pos[eid] = int(sec)                 # zuletzt Gesehenes steht hinten
+        for k in list(pos)[:max(0, len(pos) - POS_MAX)]:
+            del pos[k]
+        u["pos"] = pos
+        users_save()
+    return jsonify(ok=True)
 
 
 # ---- Favoriten & Sammlungen: pro Person (users.json), auch für geteilte Einträge anderer

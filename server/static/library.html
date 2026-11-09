@@ -240,6 +240,10 @@ code { background: var(--bg3); padding: 2px 6px; border-radius: 5px; font-size: 
 .ptop h2 { flex: 1; min-width: 0; word-break: break-word; }
 .ptop .btn { padding: 6px 9px; }
 .ptop .btn:disabled { opacity: .35; cursor: default; }
+#pSpeed { min-width: 46px; font-variant-numeric: tabular-nums; }
+.chapters { flex-wrap: nowrap; overflow-x: auto; position: relative; margin: 10px 0 2px; padding-bottom: 6px; scrollbar-width: thin; }
+.chapters .chip { flex: none; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: inherit; font: inherit; font-size: 13px; }
+.chapters .chip b { font-weight: 600; color: var(--muted); margin-right: 5px; font-variant-numeric: tabular-nums; }
 .flip .i { transform: scaleX(-1); }
 body.dropping main { outline: 3px dashed var(--accent); outline-offset: -6px; border-radius: min(14px, var(--round)); }
 </style>
@@ -326,9 +330,12 @@ body.dropping main { outline: 3px dashed var(--accent); outline-offset: -6px; bo
   <div class="media" id="media"></div>
   <div class="dlg-body">
     <div class="ptop"><h2 id="pTitle"></h2>
+      <button class="btn" id="pSpeed" aria-label="Geschwindigkeit" title="Geschwindigkeit (S)">1×</button>
+      <button class="btn" id="pPip" aria-label="Bild-in-Bild" title="Bild-in-Bild (I)"><svg class="i"><use href="/static/icons.svg#pip"/></svg></button>
       <button class="btn" id="pPrev" aria-label="Vorheriges" title="Vorheriges (P)"><svg class="i"><use href="/static/icons.svg#back"/></svg></button>
       <button class="btn flip" id="pNext" aria-label="Nächstes" title="Nächstes (N)"><svg class="i"><use href="/static/icons.svg#back"/></svg></button></div>
     <div class="meta" id="pMeta"></div>
+    <div class="chips chapters" id="pChapters" aria-label="Kapitel" hidden></div>
     <div class="actions">
       <a class="btn primary" id="pDownload"><svg class="i"><use href="/static/icons.svg#download"/></svg> Auf dieses Gerät</a>
       <button class="btn" id="pShare"></button>
@@ -825,24 +832,123 @@ function openPlayer(e) {
     if (!$("#editBox").hidden) setupRange();
     if (resume && resume < el.duration - 10) { el.currentTime = resume; toast(`Weiter bei ${fmtDur(resume)}`); }
   });
-  el?.addEventListener("timeupdate", () => { if (Math.abs(el.currentTime - (pos[e.id] || 0)) >= 3) savePos(e, el); });
-  el?.addEventListener("pause", () => savePos(e, el));
-  el?.addEventListener("ended", () => { savePos(e, null); const n = neighbor(1); if (e.kind === "audio" && n?.kind === "audio") openPlayer(n); });
+  el?.addEventListener("timeupdate", () => { if (Math.abs(el.currentTime - (pos[e.id] || 0)) >= 3) savePos(e, el); markChapter(el); });
+  el?.addEventListener("pause", () => savePos(e, el, true));
+  el?.addEventListener("ended", () => { savePos(e, null, true); const n = neighbor(1); if (e.kind === "audio" && n?.kind === "audio") openPlayer(n); });
   drawNav();
+  $("#pSpeed").hidden = !el; $("#pPip").hidden = !(v && document.pictureInPictureEnabled);
+  if (el) setRate(v ? rate : 1, false);   // gemerktes Tempo nur für Videos – Musik startet normal
+  loadExtras(e, el); setSession(e, el);
   if (!$("#playerDlg").open) $("#playerDlg").showModal();
   $("#playerDlg").scrollTop = 0;
   el?.focus();   // Tastenkürzel sofort nutzbar (sonst hat „Schließen“ den Fokus)
 }
-// Weiterschauen: Position pro Eintrag in diesem Browser merken (je Profil)
-let pos = {};
+// Weiterschauen: Position pro Eintrag auf dem Server (pro Profil → auf jedem Gerät gleich)
+let pos = {}, posSent = 0;
 const posKey = () => "kinbox_pos_" + (me?.id || "");
-function loadPos() { try { pos = JSON.parse(store.get(posKey()) || "{}"); } catch { pos = {}; } }
-function savePos(e, el) {
-  const sec = el ? el.currentTime : 0, dur = (el && el.duration) || e.duration;
-  if (sec > 5 && sec < dur - 10) pos[e.id] = Math.round(sec); else delete pos[e.id];
-  store.set(posKey(), JSON.stringify(pos));
+function loadPos() {
+  const playing = current && mediaEl() ? pos[current.id] : 0;
+  pos = { ...(data.pos || {}) };
+  if (playing) pos[current.id] = playing;   // läuft gerade – der Stand hier ist neuer als der vom Server
+  // Früher lag das nur in diesem Browser: einmalig zum Server umziehen
+  let old = {}; try { old = JSON.parse(store.get(posKey()) || "{}"); } catch {}
+  store.set(posKey(), "");
+  for (const [id, sec] of Object.entries(old)) if (!pos[id] && sec > 0 && data.items.some((x) => x.id === id)) { pos[id] = sec; sendPos(id, sec); }
 }
-function stopMedia() { const el = mediaEl(); if (el && current) savePos(current, el); $("#media").innerHTML = ""; }
+function sendPos(id, sec, leaving) {
+  const body = JSON.stringify({ id, pos: sec });
+  if (leaving && navigator.sendBeacon) return navigator.sendBeacon("/api/library/pos?token=" + encodeURIComponent(token), new Blob([body], { type: "application/json" }));
+  fetch("/api/library/pos", { method: "POST", body, keepalive: true, headers: { "X-Token": token, "Content-Type": "application/json" } }).catch(() => {});
+}
+// now: sofort senden (Pause, Ende, Schließen) – sonst höchstens alle 15 s
+function savePos(e, el, now, leaving) {
+  const sec = el ? el.currentTime : 0, dur = (el && el.duration) || e.duration, had = e.id in pos;
+  const v = sec > 5 && sec < dur - 10 ? Math.round(sec) : 0;
+  if (v) pos[e.id] = v; else delete pos[e.id];
+  if ((!v && !had) || (!now && Date.now() - posSent < 15000)) return;
+  posSent = Date.now(); sendPos(e.id, v, leaving);
+}
+addEventListener("pagehide", () => { const el = mediaEl(); if (el && current && token) savePos(current, el, true, true); });
+
+// Tempo (für Videos gemerkt), Bild-in-Bild
+const RATES = [1, 1.25, 1.5, 1.75, 2, 0.5, 0.75];
+let rate = RATES.includes(+store.get("kinbox_rate")) ? +store.get("kinbox_rate") : 1;
+function setRate(r, remember = true) {
+  const el = mediaEl(); if (!el) return;
+  el.defaultPlaybackRate = el.playbackRate = r;
+  if (remember && el.tagName === "VIDEO") { rate = r; store.set("kinbox_rate", r === 1 ? "" : String(r)); }
+  $("#pSpeed").textContent = String(r).replace(".", ",") + "×";
+  $("#pSpeed").classList.toggle("primary", r !== 1);
+}
+function nextRate() { const el = mediaEl(); if (el) setRate(RATES[(RATES.indexOf(el.playbackRate) + 1) % RATES.length]); }
+$("#pSpeed").addEventListener("click", nextRate);
+function togglePip() {
+  const v = $("#media video"); if (!v || !document.pictureInPictureEnabled) return;
+  (document.pictureInPictureElement ? document.exitPictureInPicture() : v.requestPictureInPicture()).catch(() => {});
+}
+$("#pPip").addEventListener("click", togglePip);
+
+// Kapitel + Untertitel der Datei nachladen (eingebettet oder als Datei daneben)
+let chapters = [], chapterNow = -1;
+async function loadExtras(e, el) {
+  chapters = []; chapterNow = -1;
+  $("#pChapters").hidden = true; $("#pChapters").innerHTML = "";
+  if (!el) return;
+  let x; try { x = await api(`/api/library/${e.id}/extras`); } catch { return; }
+  if (current !== e || mediaEl() !== el) return;   // inzwischen etwas anderes geöffnet
+  if (el.tagName === "VIDEO" && x.subs.length) {
+    const want = store.get("kinbox_subs"); let done = false;
+    x.subs.forEach((sub, i) => {
+      const tr = document.createElement("track");
+      tr.kind = "subtitles"; tr.src = fileUrl(e.id, "subs/" + i); tr.srclang = sub.lang;
+      tr.label = [sub.label, sub.lang].filter(Boolean).join(" · ") || t("Untertitel") + " " + (i + 1);
+      if (want && !done && sub.lang === want) tr.default = done = true;
+      el.append(tr);
+    });
+    // Wahl merken: beim nächsten Video dieselbe Sprache wieder einschalten
+    el.textTracks.addEventListener("change", () => { const on = [...el.textTracks].find((y) => y.mode === "showing"); store.set("kinbox_subs", on ? on.language : ""); });
+  }
+  chapters = x.chapters;
+  if (chapters.length) {
+    $("#pChapters").innerHTML = chapters.map((c, i) => `<button class="chip" data-i="${i}" title="${esc(c.title)}"><b>${fmtDur(c.start) || "0:00"}</b>${esc(c.title || t("Kapitel") + " " + (i + 1))}</button>`).join("");
+    $("#pChapters").hidden = false;
+    markChapter(el);
+  }
+}
+function markChapter(el) {
+  if (!chapters.length) return;
+  let i = -1; while (i + 1 < chapters.length && chapters[i + 1].start <= el.currentTime + 0.3) i++;
+  if (i === chapterNow) return;
+  chapterNow = i;
+  const row = $("#pChapters");
+  [...row.children].forEach((c, k) => c.classList.toggle("active", k === i));
+  if (i >= 0) row.scrollLeft = row.children[i].offsetLeft - 40;
+}
+$("#pChapters").addEventListener("click", (ev) => {
+  const b = ev.target.closest(".chip"), el = mediaEl(); if (!b || !el) return;
+  el.currentTime = chapters[+b.dataset.i].start; el.play().catch(() => {});
+});
+function toggleSubs() {
+  const el = $("#media video"), all = el ? [...el.textTracks] : []; if (!all.length) return;
+  const on = all.find((y) => y.mode === "showing"), want = store.get("kinbox_subs");
+  if (on) on.mode = "disabled"; else (all.find((y) => y.language === want) || all[0]).mode = "showing";
+}
+// Sperrbildschirm / Kopfhörer / Tastatur-Medientasten: Titel, Bild, Vor/Zurück
+function setSession(e, el) {
+  if (!("mediaSession" in navigator) || !el) return;
+  const art = thumbOf(e), set = (a, f) => { try { navigator.mediaSession.setActionHandler(a, f); } catch {} };
+  navigator.mediaSession.metadata = new MediaMetadata({ title: e.title, artist: e.uploader || "", album: "Kinbox", artwork: art ? [{ src: art }] : [] });
+  set("previoustrack", neighbor(-1) ? () => openPlayer(neighbor(-1)) : null);
+  set("nexttrack", neighbor(1) ? () => openPlayer(neighbor(1)) : null);
+  set("seekbackward", (d) => { el.currentTime = Math.max(0, el.currentTime - (d.seekOffset || 10)); });
+  set("seekforward", (d) => { el.currentTime += d.seekOffset || 10; });
+}
+function stopMedia() {
+  const el = mediaEl(); if (el && current) savePos(current, el, true);
+  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+  if ("mediaSession" in navigator) navigator.mediaSession.metadata = null;
+  $("#media").innerHTML = "";
+}
 // Vorheriges/Nächstes: Reihenfolge wie in der Mediathek bzw. im offenen Album
 function neighbor(dir) {
   const ids = $("#albumDlg").open && current.album ? albumItems(current.album).map((x) => x.id) : $$("#grid .card[data-id]").map((c) => c.dataset.id);
@@ -856,7 +962,7 @@ function drawNav() {
 }
 $("#pPrev").addEventListener("click", () => openPlayer(neighbor(-1)));
 $("#pNext").addEventListener("click", () => openPlayer(neighbor(1)));
-// Tasten: Leertaste/K Pause · ←/→ 5 s · J/L 10 s · M Ton · F Vollbild · N/P Nächstes/Vorheriges (Bilder: ←/→)
+// Tasten: Leertaste/K Pause · ←/→ 5 s · J/L 10 s · M Ton · F Vollbild · S Tempo · C Untertitel · I Bild-in-Bild · N/P Nächstes/Vorheriges (Bilder: ←/→)
 $("#playerDlg").addEventListener("keydown", (ev) => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest("input, select, textarea")) return;
   const m = mediaEl(), k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
@@ -869,6 +975,9 @@ $("#playerDlg").addEventListener("keydown", (ev) => {
   else if (k === "ArrowLeft" || k === "j") m.currentTime = Math.max(0, m.currentTime - (k === "j" ? 10 : 5));
   else if (k === "ArrowRight" || k === "l") m.currentTime += k === "l" ? 10 : 5;
   else if (k === "m") m.muted = !m.muted;
+  else if (k === "s") nextRate();
+  else if (k === "c") toggleSubs();
+  else if (k === "i") togglePip();
   else if (k === "f" && m.tagName === "VIDEO") document.fullscreenElement ? document.exitFullscreen() : m.requestFullscreen?.();
   else return;
   ev.preventDefault();

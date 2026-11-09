@@ -219,7 +219,8 @@
     "Ganze Playlist laden": "Download whole playlist", "z. B. Musikvideos 4K": "e.g. music videos 4K",
     "Suchen (Taste /)": "Search (key /)", "Sortierung": "Sort order", "Längste": "Longest", "Seite": "Site", "Alle Seiten": "All sites", "Person": "Person",
     "Neue Sammlung": "New collection", "Sammlung anlegen": "Create collection", "Vorheriges": "Previous", "Vorheriges (P)": "Previous (P)",
-    "Nächstes": "Next", "Nächstes (N)": "Next (N)", "Angefangen": "Started",
+    "Nächstes": "Next", "Nächstes (N)": "Next (N)", "Geschwindigkeit": "Speed", "Geschwindigkeit (S)": "Speed (S)", "Bild-in-Bild": "Picture-in-picture",
+    "Bild-in-Bild (I)": "Picture-in-picture (I)", "Ungültige Position": "Invalid position", "Angefangen": "Started",
     // ---- Abos (Kanäle/Playlists automatisch laden)
     "Abos": "Subscriptions", "Abo hinzufügen": "Add subscription", "Abonnieren": "Subscribe", "Jetzt prüfen": "Check now", "Öffnen": "Open",
     "Kinbox schaut regelmäßig nach neuen Videos eines Kanals oder einer Playlist (YouTube, TikTok-Profil …) und lädt sie in deine Mediathek.": "Kinbox regularly checks a channel or playlist (YouTube, TikTok profile …) for new videos and downloads them to your library.",

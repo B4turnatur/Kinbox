@@ -211,6 +211,7 @@ Im Browser `http://<IP-des-Servers>:8765` öffnen (oder in der Erweiterung auf �
 - Alle Downloads mit Vorschaubild, Suche, Filter und Sortierung; direkt abspielen
 - **⬇ Auf dieses Gerät** lädt die Datei aufs Handy/den PC · **📌 Behalten** schützt vor dem Aufräumen
 - **Organisieren:** ⭐ Favoriten und eigene **Sammlungen** (z. B. „Kinderlieder“) – pro Person, auch mit geteilten Dateien der Familie; Dateien bleiben dabei, wo sie sind. **Umbenennen** (auf Wunsch samt Dateiname). **Auswählen** → mehrere Dateien auf einmal zur Sammlung, als Favorit, teilen, behalten, aufs Gerät laden oder löschen
+- **Player:** **Weiterschauen auf jedem Gerät** – am Handy anfangen, am PC an derselben Stelle weiter (pro Person). **Kapitel** zum Anspringen, **Untertitel** (im Video eingebettet oder als `.srt`/`.vtt` daneben – beim Herunterladen „Untertitel“ einschalten), Geschwindigkeit 0,5–2×, Bild-in-Bild, Steuerung vom Sperrbildschirm und per Kopfhörer. Tasten: Leertaste Pause · ←/→ spulen · **S** Tempo · **C** Untertitel · **I** Bild-in-Bild · **F** Vollbild · **N**/**P** nächstes/vorheriges
 - **＋ Link**: Link einfügen, Art wählen, fertig
 - Am Handy: „Zum Startbildschirm hinzufügen" – dann wirkt sie wie eine App
 

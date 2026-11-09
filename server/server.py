@@ -27,7 +27,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.16.0"
+APP_VERSION = "3.17.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -217,7 +217,7 @@ def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: P
         "-P", f"temp:{temp_dir or download_root() / '.tmp'}",
         "--progress-template", "download:@@P%(progress)j",
         "--progress-template", "postprocess:@@Q%(progress.status)s|%(progress.postprocessor)s",
-        "--print", "before_dl:@@I%(.{title,thumbnail,id,playlist_index,n_entries,extractor_key,uploader,duration,webpage_url})j",
+        "--print", "before_dl:@@I%(.{title,thumbnail,id,playlist_index,n_entries,extractor_key,uploader,duration,webpage_url,track})j",
         "--print", "after_move:@@F%(filepath|)j",
         "--no-mtime",
     ]
@@ -651,14 +651,25 @@ def _run_job(job: Job):
     job_dir.mkdir(parents=True, exist_ok=True)
     try:
         temp_dir = download_root() / ".tmp" / job.id
+        opts, sound = job.options, None
+        if sid := sound_id(job.url):
+            job.stage = "Lädt Infos"
+            sound = sound_lookup(sid)
+            # immer als Audio, nur die Musik; Auftrag selbst behält den Sound-Link (Wiederholen sucht neu)
+            job.options = {**job.options, "mode": "audio", "musicOnly": True, "playlist": "single", "alsoAudio": False,
+                           "convert": {"type": "none"}, "chapters": [], "splitChapters": False}
+            opts = {**job.options, "url": sound["video"]}
+            if not (opts.get("filenameTemplate") or "").strip() and opts.get("organize", "flat") == "flat" \
+                    and not opts.get("musicTags"):
+                opts["filenameTemplate"] = f"%(track,title)s [{sid}].%(ext)s"
         conv_type = (job.options.get("convert") or {}).get("type", "none")
         # Bei GIF/Verkleinern landet das Original erst im Arbeitsordner, damit sich Aufträge nicht in die Quere kommen
         work_dir = temp_dir / "out" if conv_type in ("gif", "small") else job_dir
-        args = cookie_args(temp_dir) + build_args(job.options, work_dir, temp_dir, archive_dir=root)
+        args = cookie_args(temp_dir) + build_args(opts, work_dir, temp_dir, archive_dir=root)
     except OptionError as e:
         job.status, job.error, job.stage = "error", str(e), "Fehler"
         return
-    if job.options.get("mode") == "thumbnail" and (avatar := avatar_url(job.url)):
+    if job.options.get("mode") == "thumbnail" and (avatar := avatar_url(tiktok_full(job.url))):
         return run_photos(job, job_dir, url=avatar)
     if job.options.get("mode") != "audio" and is_photo_post(job.url):
         return run_photos(job, job_dir)
@@ -690,6 +701,11 @@ def _run_job(job: Job):
         if line.startswith("@@I"):
             try:
                 meta = json.loads(line[3:])
+                if sound:       # in der Mediathek als Song zeigen, nicht als das Video, aus dem die Tonspur stammt
+                    meta.update(title=meta.pop("track", None) or meta.get("title"), webpage_url=job.url,
+                                uploader=sound["artist"] or meta.get("uploader"), thumbnail=sound["cover"] or meta.get("thumbnail"))
+                    job.title = meta["title"] or job.title
+                meta.pop("track", None)
                 job.meta = meta
                 if meta.get("title") and job.title == job.url:
                     job.title = meta["title"]
@@ -822,19 +838,83 @@ def photo_site(url: str) -> bool:
     return any(h == d or h.endswith("." + d) for d in PHOTO_SITES)
 
 
-def is_photo_post(url: str) -> bool:
-    """TikTok-Slideshows erkennt man am Link (/photo/); Kurzlinks dafür einmal auflösen."""
-    if "tiktok.com" not in _host(url):
-        return False
-    if _host(url) in TIKTOK_SHORT or "tiktok.com/t/" in url:
+def _tiktok(url: str) -> bool:
+    h = _host(url)
+    return h == "tiktok.com" or h.endswith(".tiktok.com")
+
+
+TIKTOK_LONG: dict[str, str] = {}     # Kurzlink → voller Link
+
+
+def tiktok_full(url: str) -> str:
+    """Geteilte TikTok-Links sind Kurzlinks (vm.tiktok.com/…, tiktok.com/t/…) – einmal auflösen und merken."""
+    if not _tiktok(url) or not (_host(url) in TIKTOK_SHORT or "tiktok.com/t/" in url):
+        return url
+    if url not in TIKTOK_LONG:
         import urllib.request
         try:
             req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=10) as r:
-                url = r.geturl()
+                full = r.geturl()
         except Exception:
-            return False           # dann probiert es yt-dlp, danach notfalls gallery-dl
-    return "/photo/" in url
+            return url             # dann probiert es yt-dlp, danach notfalls gallery-dl
+        if not _tiktok(full):
+            return url
+        if len(TIKTOK_LONG) > 200:
+            TIKTOK_LONG.clear()
+        TIKTOK_LONG[url] = full
+    return TIKTOK_LONG[url]
+
+
+def is_photo_post(url: str) -> bool:
+    """TikTok-Slideshows erkennt man am Link (/photo/)."""
+    return _tiktok(url) and "/photo/" in tiktok_full(url)
+
+
+# ---- TikTok-Sounds: Link zu einem Song („Diesen Sound verwenden“-Seite) → die Musik als Audio-Datei
+SOUND_CACHE: dict[str, tuple] = {}
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+
+
+def sound_id(url: str) -> str:
+    """tiktok.com/music/<Name>-<Nummer> → Nummer, sonst ""."""
+    from urllib.parse import urlparse
+    if not _tiktok(url):
+        return ""
+    m = re.fullmatch(r"/music/(?:[^/]*-)?(\d{5,25})/?", urlparse(tiktok_full(url)).path)
+    return m[1] if m else ""
+
+
+def sound_lookup(sid: str) -> dict:
+    """Einen Sound selbst kann yt-dlp nicht laden – aber jedes Video damit enthält die Musik als eigene Tonspur.
+    TikToks öffentliche Einbettungsseite nennt Videos, die den Sound benutzen: {video, artist, cover}."""
+    hit = SOUND_CACHE.get(sid)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    import urllib.request
+    nothing = OptionError("Zu diesem TikTok-Sound wurde kein Video gefunden – teile stattdessen ein Video mit dem Sound "
+                          "und wähle Audio → „TikTok: nur die Musik“.")
+    try:
+        req = urllib.request.Request(f"https://www.tiktok.com/embed/music/{sid}", headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            page = r.read(3_000_000).decode("utf-8", "replace")
+        m = re.search(r'<script[^>]*id="__FRONTITY_CONNECT_STATE__"[^>]*>(.*?)</script>', page, re.S)
+        data = next(iter(json.loads(m[1])["source"]["data"].values()))
+        vid = next(v for v in data.get("videoList") or [] if re.fullmatch(r"\d{5,25}", str(v.get("id") or ""))
+                   and str(v.get("privateItem")).lower() != "true")
+    except Exception:
+        raise nothing
+    emb = data.get("embedInfo") if isinstance(data.get("embedInfo"), dict) else {}
+    user = str(vid.get("authorUniqueId") or "_")
+    if not re.fullmatch(r"[\w.-]+", user):
+        user = "_"
+    out = {"video": f"https://www.tiktok.com/@{user}/video/{vid['id']}",
+           "artist": str(emb.get("artist") or "")[:200],
+           "cover": emb["coverUrl"] if str(emb.get("coverUrl") or "").startswith("https://") else ""}
+    if len(SOUND_CACHE) > 200:
+        SOUND_CACHE.clear()
+    SOUND_CACHE[sid] = (time.time(), out)
+    return out
 
 
 def avatar_url(url: str) -> str:
@@ -1702,6 +1782,7 @@ def also_audio(job: "Job"):
 # --------------------------------------------------------------------------- #
 
 SERVER_PRESETS = {
+    "image": {"mode": "thumbnail"},      # Vorschaubild; auf einer Profilseite (Instagram/TikTok) das Profilbild
     "best": {"mode": "video", "quality": "best", "container": "mp4"},
     "1080": {"mode": "video", "quality": "1080", "container": "mp4", "vcodec": "h264"},
     "720": {"mode": "video", "quality": "720", "container": "mp4", "vcodec": "h264"},
@@ -1791,7 +1872,7 @@ def summarize_info(info: dict) -> dict:
         "type": "video", "id": info.get("id"), "title": info.get("title"),
         "uploader": info.get("uploader") or info.get("channel"), "duration": duration,
         "thumbnail": info.get("thumbnail"), "extractor": info.get("extractor_key"),
-        "webpage_url": info.get("webpage_url"), "is_live": bool(info.get("is_live")),
+        "webpage_url": info.get("webpage_url"), "is_live": bool(info.get("is_live")), "track": info.get("track"),
         "qualities": qualities, "audio_size": int(best_audio),
         "chapters": [{"title": c.get("title"), "start": c.get("start_time"), "end": c.get("end_time")}
                      for c in (info.get("chapters") or [])],
@@ -2120,8 +2201,17 @@ def info():
     url = str(body.get("url") or "").strip()
     if not re.match(r"^https?://", url):
         return err("Ungültige URL")
+    profile = avatar_url(tiktok_full(url))
     try:
+        if sid := sound_id(url):
+            snd = sound_lookup(sid)
+            data = dict(fetch_info(snd["video"], False))
+            data.update(sound=True, title=data.get("track") or data.get("title"), uploader=snd["artist"] or data.get("uploader"),
+                        thumbnail=snd["cover"] or data.get("thumbnail"), webpage_url=url, chapters=[], subtitles=[],
+                        auto_subtitles=[], qualities=[])
+            return jsonify(data)
         data = dict(fetch_info(url, bool(body.get("playlist"))))
+        data["profile"] = bool(profile)
         if data.get("type") == "video" and data.get("id"):
             uid = me()["id"]
             with LIB_LOCK:
@@ -2130,6 +2220,8 @@ def info():
                                    and Path(e["path"]).exists() and (e.get("owner") == uid or e.get("shared"))]
         return jsonify(data)
     except OptionError as e:
+        if profile:            # Videos des Profils nicht abrufbar (z. B. Instagram) – das Profilbild geht trotzdem
+            return jsonify(type="profile", profile=True, title=profile.rstrip("/").split("/")[-2], error=str(e))
         if photo_site(url):    # Foto-Beiträge kennt yt-dlp nicht – der Download klappt trotzdem (gallery-dl)
             return err(f"Kein Video gefunden – Foto-Beitrag? Einfach „Herunterladen“ drücken, Kinbox lädt dann die Bilder. ({e})", 422)
         return err(str(e), 422)

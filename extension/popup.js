@@ -264,6 +264,34 @@ function showMedia({ title, sub = "", thumb = "", duration = null, error = "", l
   $("#media").classList.toggle("loading", loading);
 }
 
+// Hinweis je nach Link: TikTok-Sound → kommt als Audio · Profil (Instagram/TikTok) → Knopf fürs Profilbild
+function showHint(d) {
+  const el = $("#hint");
+  el.textContent = "";
+  el.hidden = !(d?.sound || d?.profile);
+  if (d?.sound) el.textContent = "TikTok-Sound – wird als Audio geladen (nur die Musik).";
+  else if (d?.profile) {
+    const b = document.createElement("button");
+    b.className = "link";
+    b.textContent = "Nur das Profilbild laden";
+    b.onclick = downloadAvatar;
+    el.append(d.type === "profile" ? "Profil – die Videos sind hier nicht abrufbar." : "Das ist ein Profil.", " ", b);
+  }
+}
+
+async function downloadAvatar() {
+  try {
+    const options = { ...structuredClone(opts), url: $("#url").value.trim(), mode: "thumbnail", playlist: "single",
+      convert: { type: "none" }, title: "", thumbnail: "" };
+    const res = await chrome.runtime.sendMessage({ type: "queue", options });
+    if (!res?.ok) throw new Error(res?.error || "Unbekannter Fehler");
+    toast("✓ Zur Warteschlange hinzugefügt");
+    showView("queue");
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
 function resetPerVideo() {
   info = null;
   trim = { start: null, end: null };
@@ -280,6 +308,7 @@ async function loadInfo() {
   }
   resetPerVideo();
   showAlready([]);
+  showHint(null);
   const seq = ++infoSeq;
   showMedia({ title: prefill.title || "Lade Infos …", sub: new URL(url).hostname, thumb: prefill.thumbnail, loading: true });
   updatePlaylistCard();
@@ -289,7 +318,8 @@ async function loadInfo() {
   try {
     const data = await api("/api/info", { method: "POST", body: { url }, timeout: 90000, settings });
     if (seq !== infoSeq) return;
-    info = data;
+    info = data.type === "profile" ? null : data;   // Profil ohne abrufbare Videos: nur das Profilbild anbieten
+    showHint(data);
     if (data.type === "playlist") {
       playlistMode = "all";
       showMedia({ title: data.title, sub: `Playlist · ${data.count} Videos${data.uploader ? " · " + data.uploader : ""}`, thumb: data.thumbnail || prefill.thumbnail });

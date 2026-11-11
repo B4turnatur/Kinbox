@@ -88,7 +88,7 @@ with tempfile.TemporaryDirectory() as d:
     c, h = server.app.test_client(), {"X-Token": u["token"]}
     asked = []
 
-    def fake_info(url, playlist):
+    def fake_info(url, playlist, user=None):
         asked.append(url)
         if "instagram.com" in url:
             raise server.OptionError("Unable to extract data")

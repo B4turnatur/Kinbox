@@ -1,5 +1,5 @@
 import {
-  api, getSettings, saveSettings, allPresets, deepMerge, fileUrl, libraryUrl, isSocial, mediaUrlForTab,
+  api, getSettings, saveSettings, allPresets, presetOptions, diffOptions, fileUrl, libraryUrl, isSocial, mediaUrlForTab,
   fmtBytes, fmtTime, parseTime, qualityLabel, youtubeId, playlistId, escapeHtml, cssUrl, icon, presetIcon,
 } from "./lib/common.js";
 
@@ -201,9 +201,7 @@ async function renderPresets() {
   box.onclick = (e) => {
     const b = e.target.closest("button[data-id]");
     if (!b) return;
-    const base = structuredClone(settings.defaults);
-    const p = presets.find((x) => x.id === b.dataset.id);
-    opts = p ? deepMerge(base, structuredClone(p.options)) : base;
+    opts = presetOptions(settings.defaults, presets.find((x) => x.id === b.dataset.id));
     activePreset = b.dataset.id;
     render();
   };
@@ -229,16 +227,23 @@ function savePresetDialog() {
     const name = $("#pName", d).value.trim();
     const makeDefault = $("#pDefault", d).checked;
     const clean = structuredClone(opts);
-    if (name) {
-      const icon = { video: "▶", audio: "♪", thumbnail: "🖼" }[opts.mode];
-      const id = "u" + Date.now().toString(36);
-      settings.presets = [...settings.presets, { id, name, icon, options: clean }];
-      await saveSettings({ presets: settings.presets });
-      activePreset = id;
-    }
-    if (makeDefault) {
-      settings.defaults = clean;
-      await saveSettings({ defaults: clean });
+    // Erst speichern, dann die lokale Liste ändern – schlägt storage.sync fehl (z. B. Kontingent), bleibt alles wie vorher.
+    try {
+      if (name) {
+        const icon = { video: "▶", audio: "♪", thumbnail: "🖼" }[opts.mode];
+        const id = "u" + Date.now().toString(36);
+        const presets = [...settings.presets, { id, name, icon, options: diffOptions(clean) }];
+        await saveSettings({ presets });
+        settings.presets = presets;
+        activePreset = id;
+      }
+      if (makeDefault) {
+        await saveSettings({ defaults: clean });
+        settings.defaults = clean;
+      }
+    } catch (e) {
+      toast(`${t("Speichern fehlgeschlagen")}: ${e.message}`, true);
+      return;
     }
     d.remove();
     if (name || makeDefault) {
@@ -669,20 +674,26 @@ function showView(v) {
   pollJobs();
 }
 
+// Jeder Aufruf startet eine neue „Generation“; eine ältere, noch wartende Abfrage plant danach nichts mehr ein –
+// sonst liefen nach Tab-Wechsel/Klicks mehrere Timer-Ketten parallel.
+let pollGen = 0;
 async function pollJobs() {
+  const gen = ++pollGen;
   clearTimeout(pollTimer);
   if (settings?.serverUrl) {
     try {
       const jobs = await api("/api/jobs", { timeout: 8000, settings });
+      if (gen !== pollGen) return;
       const active = jobs.filter((j) => ["running", "queued", "scheduled"].includes(j.status)).length;
       $("#queueCount").hidden = !active;
       $("#queueCount").textContent = active;
       if (currentView === "queue") renderJobs(jobs);
     } catch (e) {
+      if (gen !== pollGen) return;
       if (currentView === "queue") $("#jobs").innerHTML = `<div class="notice warn">${escapeHtml(e.message)}</div>`, lastJobsJson = "";
     }
   }
-  pollTimer = setTimeout(pollJobs, currentView === "queue" ? 1000 : 4000);
+  if (gen === pollGen) pollTimer = setTimeout(pollJobs, currentView === "queue" ? 1000 : 4000);
 }
 
 async function renderJobs(jobs) {

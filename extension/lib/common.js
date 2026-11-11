@@ -66,14 +66,28 @@ export const DEFAULT_SETTINGS = {
   hiddenBuiltins: [],   // ausgeblendete eingebaute Presets
 };
 
+// Token liegt nur lokal (storage.local) – nicht in Googles Sync-Speicher. Ältere Versionen hatten ihn in
+// storage.sync: einmalig übernehmen und dort löschen. In der Android-App sind sync und local derselbe Speicher.
+async function localToken(syncToken) {
+  const { sync, local } = chrome.storage;
+  if (!local || sync === local) return syncToken || "";
+  const { token } = await local.get({ token: null });
+  if (token == null) await local.set({ token: syncToken || "" });
+  if (syncToken) await sync.remove("token");
+  return token ?? (syncToken || "");
+}
+
 export async function getSettings() {
   const s = await chrome.storage.sync.get(DEFAULT_SETTINGS);
+  s.token = await localToken(s.token);
   s.defaults = deepMerge(structuredClone(DEFAULT_OPTIONS), s.defaults || {});
   return s;
 }
 
 export async function saveSettings(patch) {
-  await chrome.storage.sync.set(patch);
+  const { token, ...rest } = patch;
+  if (token !== undefined) await (chrome.storage.local || chrome.storage.sync).set({ token });
+  if (Object.keys(rest).length) await chrome.storage.sync.set(rest);
 }
 
 export async function allPresets() {
@@ -82,6 +96,61 @@ export async function allPresets() {
     ...BUILTIN_PRESETS.filter((p) => !s.hiddenBuiltins.includes(p.id)),
     ...s.presets,
   ];
+}
+
+// ---- Presets: welche Optionen gelten? ------------------------------------
+// Eingebaute Presets legen fest, WAS entsteht (Format/Qualität). Sie bauen auf den eigenen Standards auf
+// (Ordner, „Auf PC speichern“, Dateinamen, SponsorBlock …), setzen aber alles, was das Ergebnis verändert
+// (Umwandeln, zusätzliche MP3, Nachtplan, nur Musik, Musik-Tags, Lautstärke, Untertitel), neutral –
+// sonst würde „Beste Qualität“ verkleinern, nur weil „WhatsApp“ als Standard gespeichert ist.
+export const PRESET_NEUTRAL = {
+  convert: { type: "none" }, alsoAudio: false, when: "now", musicOnly: false, musicTags: false,
+  normalize: false, subs: { enabled: false },
+};
+export const isBuiltinPreset = (p) => !!p && BUILTIN_PRESETS.some((b) => b.id === p.id);
+
+// Eigene Presets sind als Unterschied zu DEFAULT_OPTIONS gespeichert (alte, vollständige bleiben lesbar)
+// und werden genau so wiederhergestellt – unabhängig vom aktuellen Standard.
+export function presetOptions(defaults, preset) {
+  const base = structuredClone(DEFAULT_OPTIONS);
+  if (!preset) return deepMerge(base, structuredClone(defaults || {}));
+  if (isBuiltinPreset(preset)) deepMerge(deepMerge(base, structuredClone(defaults || {})), structuredClone(PRESET_NEUTRAL));
+  return deepMerge(base, structuredClone(preset.options || {}));
+}
+
+// Nur was vom Grundwert abweicht (storage.sync erlaubt höchstens 8 KB pro Eintrag).
+export function diffOptions(opts, base = DEFAULT_OPTIONS) {
+  const out = {};
+  for (const [k, v] of Object.entries(opts || {})) {
+    const b = base?.[k];
+    if (v && typeof v === "object" && !Array.isArray(v) && b && typeof b === "object" && !Array.isArray(b)) {
+      const d = diffOptions(v, b);
+      if (Object.keys(d).length) out[k] = d;
+    } else if (JSON.stringify(v) !== JSON.stringify(b)) out[k] = structuredClone(v);
+  }
+  return out;
+}
+
+// Import aus Datei: nur bekannte Schlüssel mit passendem Typ übernehmen (nie den Token).
+export function sanitizeImport(data) {
+  const out = {};
+  const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  if (!isObj(data)) return out;
+  for (const [k, def] of Object.entries(DEFAULT_SETTINGS)) {
+    if (k === "token" || !(k in data)) continue;
+    const v = data[k];
+    if (Array.isArray(def)) {
+      if (!Array.isArray(v)) continue;
+      out[k] = k === "presets"
+        ? v.filter((p) => isObj(p) && typeof p.id === "string" && typeof p.name === "string" && isObj(p.options))
+          .map((p) => ({ id: p.id.slice(0, 40), name: p.name.slice(0, 80), icon: typeof p.icon === "string" ? p.icon.slice(0, 8) : "•", options: diffOptions(p.options) }))
+        : v.filter((x) => typeof x === "string");
+    } else if (isObj(def)) {
+      if (isObj(v)) out[k] = v;
+    } else if (typeof v === typeof def) out[k] = v;
+  }
+  if ("socialPos" in out && !/^[tb][lr]$/.test(out.socialPos)) delete out.socialPos;
+  return out;
 }
 
 export function deepMerge(target, src) {
@@ -105,8 +174,12 @@ export class ApiError extends Error {
   constructor(msg, status) { super(msg); this.status = status; }
 }
 
-// Heim- oder Unterwegs-Adresse: die erste, die antwortet (Ergebnis 1 Minute gemerkt).
-let _base = "", _baseAt = 0;
+// Heim- oder Unterwegs-Adresse: beide parallel prüfen, Heim bevorzugt. Ergebnis 1 Minute gemerkt – auch in
+// storage.session, damit Popup, Einstellungen und Hintergrund nicht jedes Mal neu prüfen.
+// Gleichzeitige Aufrufe teilen sich eine laufende Prüfung.
+const BASE_TTL = 60000;
+let _base = { key: "", base: "", at: 0 }, _probe = null, _probeKey = "";
+const sessionArea = () => globalThis.chrome?.storage?.session;
 async function reachable(base) {
   try {
     await fetch(base + "/api/ping", { signal: AbortSignal.timeout(2000) });
@@ -116,11 +189,27 @@ async function reachable(base) {
 export async function serverBase(s, fresh = false) {
   const urls = [s.serverUrl, s.serverUrl2].map(normalizeUrl).filter(Boolean);
   if (urls.length < 2) return urls[0] || "";
-  if (!fresh && urls.includes(_base) && Date.now() - _baseAt < 60000) return _base;
-  _base = urls[0];
-  for (const u of urls) if (await reachable(u)) { _base = u; break; }
-  _baseAt = Date.now();
-  return _base;
+  const key = urls.join(" ");
+  const valid = (c) => !!c && c.key === key && urls.includes(c.base) && Date.now() - c.at < BASE_TTL;
+  if (!fresh) {
+    if (valid(_base)) return _base.base;
+    if (_probe && _probeKey === key) return _probe;
+    try {
+      const { kbBase } = (await sessionArea()?.get("kbBase")) || {};
+      if (valid(kbBase)) { _base = kbBase; return kbBase.base; }
+    } catch { /* kein storage.session (Android-App, Tests) */ }
+    if (_probe && _probeKey === key) return _probe;
+  }
+  _probeKey = key;
+  const probe = (async () => {
+    const [home, away] = urls.map(reachable);
+    const base = (await home) ? urls[0] : (await away) ? urls[1] : urls[0];
+    _base = { key, base, at: Date.now() };
+    try { await sessionArea()?.set({ kbBase: _base }); } catch { /* egal */ }
+    return base;
+  })();
+  _probe = probe;
+  try { return await probe; } finally { if (_probe === probe) _probe = null; }
 }
 
 export async function api(path, { method = "GET", body, timeout = 20000, settings, retry = true } = {}) {
@@ -138,8 +227,9 @@ export async function api(path, { method = "GET", body, timeout = 20000, setting
       signal: ctrl.signal,
     });
   } catch (e) {
-    if (retry && normalizeUrl(s.serverUrl2) && Date.now() - _baseAt > 3000) {  // Netz gewechselt → andere Adresse probieren
-      _baseAt = 0;
+    // Netz gewechselt? Nur bei echtem Netzwerkfehler (nicht bei Zeitüberschreitung) neu prüfen und nur
+    // wiederholen, wenn jetzt die ANDERE Adresse gilt – die erste war nicht erreichbar, ein POST kam also nicht an.
+    if (retry && e.name === "TypeError" && normalizeUrl(s.serverUrl2) && (await serverBase(s, true)) !== base) {
       return api(path, { method, body, timeout, settings: s, retry: false });
     }
     throw new ApiError(e.name === "AbortError" ? "Zeitüberschreitung – Server antwortet nicht." : "Server nicht erreichbar. Läuft er und stimmt die Adresse?", 0);

@@ -282,24 +282,29 @@
   const SPLIT = /^([^\p{L}\p{N}(]*)([\s\S]*?)([^\p{L}\p{N})]*)$/u;
   const cache = new Map();
 
-  function lookup(t) {
-    if (EN[t] !== undefined) return EN[t];
-    const [, a, c, z] = t.match(SPLIT);
-    if (c !== t && EN[c] !== undefined) return a + EN[c] + z;
+  function lookup(text) {
+    if (EN[text] !== undefined) return EN[text];
+    const [, a, c, z] = text.match(SPLIT);
+    if (c !== text && EN[c] !== undefined) return a + EN[c] + z;
     for (const [re, en] of pats) {
-      const m = t.match(re) || (c !== t && c.match(re));
-      if (m) return (m[0] === t ? "" : a) + en.replace(/\{(\d)\}/g, (_, i) => tr(m[+i + 1])) + (m[0] === t ? "" : z);
+      const m = text.match(re) || (c !== text && c.match(re));
+      if (m) return (m[0] === text ? "" : a) + en.replace(/\{(\d)\}/g, (_, i) => tr(m[+i + 1])) + (m[0] === text ? "" : z);
     }
     return null;
   }
   // Übersetzt einen Text (Leerzeichen am Rand bleiben erhalten). Unbekanntes bleibt unverändert.
+  // Der Zwischenspeicher ist begrenzt – Seiten mit vielen wechselnden Texten (Titel, Zahlen) füllen ihn sonst endlos.
   function tr(s) {
     if (lang === "de" || typeof s !== "string") return s;
-    const t = s.trim();
-    if (!t || !/\p{L}/u.test(t)) return s;
-    if (!cache.has(t)) cache.set(t, lookup(t));
-    const r = cache.get(t);
-    return r == null ? s : s.replace(t, r);
+    const key = s.trim();
+    if (!key || !/\p{L}/u.test(key)) return s;
+    let r = cache.get(key);
+    if (r === undefined) {
+      if (cache.size >= 2000) cache.clear();
+      r = lookup(key);
+      cache.set(key, r);
+    }
+    return r == null ? s : s.replace(key, r);
   }
 
   const ATTRS = ["title", "placeholder", "aria-label", "alt"];

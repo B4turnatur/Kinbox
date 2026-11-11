@@ -198,8 +198,14 @@
       if (v && mediaRect(v)) show(v); else hide();
     });
   }, { passive: true });
-  addEventListener("scroll", () => { if (!root.hidden) place(); }, { passive: true, capture: true });
-  addEventListener("resize", () => { if (!root.hidden) place(); });
+  // Scrollen feuert sehr oft (capture: auch jede scrollende Liste) – höchstens einmal pro Bild neu setzen
+  let placeRaf = 0;
+  const placeSoon = () => {
+    if (root.hidden || placeRaf) return;
+    placeRaf = requestAnimationFrame(() => { placeRaf = 0; if (!root.hidden) place(); });
+  };
+  addEventListener("scroll", placeSoon, { passive: true, capture: true });
+  addEventListener("resize", placeSoon);
 
   const targetUrl = () => (target && resolve(target)) || null;
 
@@ -264,9 +270,15 @@
   let ctxXY = null;
   document.addEventListener("contextmenu", (e) => { ctxXY = [e.clientX, e.clientY]; }, true);
 
+  // TikTok-Sound- (/music/…) und Profilseiten (/@name) meinen die Seite selbst (Sound → Audio, Profil →
+  // Profilbild-Knopf im Popup) – nicht irgendein Video aus dem Raster darunter.
+  const pageIsMedia = () => SITE === "tiktok" && /^\/(music\/[^/]+|@[\w.-]+)\/?$/.test(location.pathname);
+
   chrome.runtime.onMessage.addListener((msg, _s, reply) => {
     if (msg.type === "currentMediaUrl") {
-      const v = (target && !root.hidden && target) || mostVisibleVideo();
+      const hovered = target && !root.hidden && target;
+      if (!hovered && pageIsMedia()) return reply({ url: abs(location.pathname), site: SITE });
+      const v = hovered || mostVisibleVideo();
       reply({ url: v ? resolve(v) : null, site: SITE });
     } else if (msg.type === "contextMediaUrl") {
       const v = ctxXY ? videoAt(...ctxXY) : null;

@@ -1,5 +1,5 @@
 import "./lib/i18n.js";
-import { api, getSettings, allPresets, deepMerge, DEFAULT_OPTIONS, fileUrl, libraryUrl, youtubeId, isSocial, mediaUrlForTab, injectContent } from "./lib/common.js";
+import { api, getSettings, allPresets, presetOptions, fileUrl, libraryUrl, youtubeId, isSocial, mediaUrlForTab, injectContent } from "./lib/common.js";
 
 // ------------------------------------------------------------------------
 // Kontextmenü
@@ -7,7 +7,7 @@ import { api, getSettings, allPresets, deepMerge, DEFAULT_OPTIONS, fileUrl, libr
 
 // Nacheinander: zwei gleichzeitige Durchläufe (Installation + Preset-Änderung) gäben „duplicate id“-Fehler.
 let menuQueue = Promise.resolve();
-const buildMenus = () => (menuQueue = menuQueue.catch(() => {}).then(rebuildMenus));
+const buildMenus = () => (menuQueue = menuQueue.then(rebuildMenus).catch((e) => console.warn("Kontextmenü:", e)));
 
 async function rebuildMenus() {
   await chrome.contextMenus.removeAll();
@@ -48,17 +48,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (!info.linkUrl && isSocial(info.pageUrl)) url = (await mediaUrlForTab(tab, "contextMediaUrl")) || (await mediaUrlForTab(tab)) || url;
     return openOptionsWindow(url, tab?.id);
   }
-  let presetOpts = {};
+  let preset = null;
   if (String(info.menuItemId).startsWith("preset:")) {
-    const p = (await allPresets()).find((x) => "preset:" + x.id === info.menuItemId);
-    presetOpts = p?.options || {};
+    preset = (await allPresets()).find((x) => "preset:" + x.id === info.menuItemId) || null;
   }
   if (!info.linkUrl && isSocial(info.pageUrl)) {
     url = (await mediaUrlForTab(tab, "contextMediaUrl")) || url;
     if (url === info.pageUrl) url = (await mediaUrlForTab(tab)) || url;
   }
   const sameAsPage = url === info.pageUrl;
-  await quickQueue(url, presetOpts, sameAsPage ? { title: tab?.title } : {}, tab?.id);
+  // Fehler meldet quickQueue schon selbst (Toast + Benachrichtigung)
+  await quickQueue(url, preset, sameAsPage ? { title: tab?.title } : {}, tab?.id).catch(() => {});
 });
 
 chrome.commands.onCommand.addListener(async (cmd, tab) => {
@@ -66,8 +66,8 @@ chrome.commands.onCommand.addListener(async (cmd, tab) => {
   if (!tab?.url) return;
   const url = await mediaUrlForTab(tab);
   const meta = { title: url === tab.url ? tab.title : "" };
-  if (cmd === "quick-download") await quickQueue(url, {}, meta, tab.id);
-  if (cmd === "quick-mp3") await quickQueue(url, { mode: "audio", audioFormat: "mp3", audioBitrate: "320" }, meta, tab.id);
+  if (cmd === "quick-download") await quickQueue(url, null, meta, tab.id).catch(() => {});
+  if (cmd === "quick-mp3") await quickQueue(url, MP3_PRESET, meta, tab.id).catch(() => {});
 });
 
 function openOptionsWindow(url, tabId) {
@@ -90,9 +90,13 @@ export async function queueJob(options) {
   return job;
 }
 
-async function quickQueue(url, presetOpts, meta = {}, tabId) {
+// Tastenkürzel „MP3“ verhält sich wie das eingebaute MP3-Preset (auch wenn es ausgeblendet ist).
+const MP3_PRESET = { id: "mp3", options: { mode: "audio", audioFormat: "mp3", audioBitrate: "320" } };
+
+// preset: null = eigene Standards · eingebautes/eigenes Preset (siehe presetOptions) · extra: z. B. { playlist: "all" }
+async function quickQueue(url, preset, meta = {}, tabId, extra = {}) {
   const s = await getSettings();
-  const opts = deepMerge(deepMerge(structuredClone(DEFAULT_OPTIONS), s.defaults), presetOpts);
+  const opts = Object.assign(presetOptions(s.defaults, preset), extra);
   opts.url = url;
   if (meta.title) opts.title = cleanTitle(meta.title);
   const yt = youtubeId(url);
@@ -158,12 +162,23 @@ async function poll() {
   try {
     for (let i = 0; i < 400; i++) {             // max. ~20 Min am Stück, danach übernimmt der Alarm
       const active = await pollOnce();
+      await pollAlarm(active);
       if (!active) break;
       await new Promise((r) => setTimeout(r, 3000));
     }
+  } catch (e) {
+    console.warn("Abfrage fehlgeschlagen:", e);
   } finally {
     polling = false;
   }
+}
+
+// Alarm alle 30 s nur, solange Aufträge laufen/warten (oder verfolgte bei nicht erreichbarem Server) – sonst alle 5 Min
+// (z. B. für Nacht-Aufträge, die später starten). Neu angelegt wird er nur, wenn sich der Takt ändert.
+async function pollAlarm(busy) {
+  const period = busy ? 0.5 : 5;
+  const a = await chrome.alarms.get("poll");
+  if (a?.periodInMinutes !== period) await chrome.alarms.create("poll", { periodInMinutes: period });
 }
 
 async function pollOnce() {
@@ -172,6 +187,8 @@ async function pollOnce() {
     jobs = await api("/api/jobs", { timeout: 8000 });
   } catch {
     showBadge([]);
+    const { tracked = {} } = await chrome.storage.local.get("tracked");
+    await pollAlarm(Object.keys(tracked).length > 0);
     return false;
   }
   const active = jobs.filter((j) => j.status === "running" || j.status === "queued");
@@ -214,7 +231,11 @@ function showBadge(active) {
 async function saveToPc(job) {
   for (let i = 0; i < job.files.length; i++) {
     if (!job.files[i].exists) continue;
-    chrome.downloads.download({ url: await fileUrl(job.id, i), filename: job.files[i].name.replace(/[\\/:*?"<>|]/g, "_"), conflictAction: "uniquify" });
+    try {
+      await chrome.downloads.download({ url: await fileUrl(job.id, i), filename: job.files[i].name.replace(/[\\/:*?"<>|]/g, "_"), conflictAction: "uniquify" });
+    } catch (e) {
+      notify("err-" + Date.now(), t("Speichern fehlgeschlagen"), `${job.files[i].name}\n${t(e.message)}`);
+    }
   }
 }
 
@@ -241,7 +262,7 @@ chrome.notifications.onClicked.addListener(async (nid) => {
   if (nid.startsWith("done-")) chrome.tabs.create({ url: await libraryUrl() });
 });
 
-chrome.alarms.create("poll", { periodInMinutes: 0.5 });
+chrome.alarms.get("poll").then((a) => a || chrome.alarms.create("poll", { periodInMinutes: 5 })).catch(() => {});
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === "poll") poll(); });
 
 // ------------------------------------------------------------------------
@@ -255,9 +276,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         case "presets":
           return reply({ ok: true, presets: await allPresets() });
         case "quick": {
-          let opts = msg.options || {};
-          if (msg.presetId) opts = (await allPresets()).find((p) => p.id === msg.presetId)?.options || {};
-          const job = await quickQueue(msg.url, opts, { title: msg.title }, sender.tab?.id);
+          const preset = msg.presetId ? (await allPresets()).find((p) => p.id === msg.presetId) || null : null;
+          const job = await quickQueue(msg.url, preset, { title: msg.title }, sender.tab?.id, msg.options || {});
           return reply({ ok: true, job });
         }
         case "queue":

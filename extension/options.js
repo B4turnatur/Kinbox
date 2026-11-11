@@ -1,4 +1,4 @@
-import { api, serverBase, getSettings, saveSettings, normalizeUrl, BUILTIN_PRESETS, DEFAULT_OPTIONS, DEFAULT_SETTINGS, escapeHtml, libraryUrl, fmtBytes } from "./lib/common.js";
+import { api, serverBase, getSettings, saveSettings, normalizeUrl, BUILTIN_PRESETS, DEFAULT_OPTIONS, DEFAULT_SETTINGS, escapeHtml, libraryUrl, fmtBytes, presetOptions, sanitizeImport } from "./lib/common.js";
 
 const $ = (s) => document.querySelector(s);
 let settings;
@@ -179,7 +179,7 @@ function renderPresets() {
       </div>`).join("") +
     settings.presets.map((p) => `
       <div class="pitem"><span>${escapeHtml(p.icon || "•")}</span>
-        <div class="n">${escapeHtml(p.name)}<div class="d">${describe(p.options)}</div></div>
+        <div class="n">${escapeHtml(p.name)}<div class="d">${describe(presetOptions(null, p))}</div></div>
         <button class="link" data-default="${p.id}">Als Standard</button>
         <button class="link" data-rename="${p.id}">Umbenennen</button>
         <button class="link" data-del="${p.id}" style="color:var(--err)">Löschen</button>
@@ -206,7 +206,7 @@ function renderPresets() {
       await saveSettings({ presets: settings.presets });
     } else if (el.dataset.default) {
       const p = settings.presets.find((x) => x.id === el.dataset.default);
-      await saveSettings({ defaults: { ...structuredClone(DEFAULT_OPTIONS), ...structuredClone(p.options) } });
+      await saveSettings({ defaults: presetOptions(null, p) });
       flash(el, "✓ Standard");
       return;
     } else return;
@@ -252,11 +252,13 @@ async function importSettings(e) {
   const f = e.target.files[0];
   if (!f) return;
   try {
-    const data = JSON.parse(await f.text());
-    const allowed = Object.fromEntries(Object.entries(data).filter(([k]) => k in DEFAULT_SETTINGS && k !== "token"));
+    const allowed = sanitizeImport(JSON.parse(await f.text()));
+    if (!Object.keys(allowed).length) throw new Error();
     await saveSettings(allowed);
     location.reload();
   } catch {
     alert(t("Die Datei konnte nicht gelesen werden."));
+  } finally {
+    e.target.value = "";
   }
 }

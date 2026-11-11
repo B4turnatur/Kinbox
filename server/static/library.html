@@ -540,6 +540,8 @@ body.dropping main { outline: 3px dashed var(--accent); outline-offset: -6px; bo
     <h2><svg class="i"><use href="/static/icons.svg#lock"/></svg> Cookies</h2>
     <div class="hint">Für Instagram, altersbeschränkte Videos und den YouTube-Bot-Check: im Browser einloggen, mit der Erweiterung „Get cookies.txt LOCALLY“ exportieren und hier hochladen. Mehrere Seiten nacheinander hochladen geht.</div>
     <div class="row"><span class="hint" id="cookieInfo"></span><label class="btn">cookies.txt hochladen<input type="file" id="cookieFile" accept=".txt,text/plain" hidden></label><button type="button" class="btn" id="cookieDel" hidden>Entfernen</button></div>
+    <label class="switch"><input type="checkbox" id="cookiesAll"><span></span>Cookies auch für die anderen Profile nutzen</label>
+    <div class="hint">Aus: nur Admin-Aufträge laden mit deinen Cookies. YouTube-Verlauf, „Später ansehen“ und „Mag ich“ sind für andere Profile immer gesperrt.</div>
     <h2><svg class="i"><use href="/static/icons.svg#update"/></svg> Kinbox-Update</h2>
     <div class="row"><span class="hint" id="updInfo"></span><button type="button" class="btn primary" id="appUpdate" hidden>Jetzt aktualisieren</button></div>
     <div class="hint" id="srvInfo"></div>
@@ -601,7 +603,13 @@ async function showPicker() {
   $$("dialog[open]").forEach((d) => d.close());
   setInert(true);   // sonst landen Tastendrücke (PIN!) im Suchfeld dahinter
   try {
-    const list = await (await fetch("/api/profiles")).json();
+    const r = await fetch("/api/profiles");
+    const list = await r.json();
+    if (!r.ok || !Array.isArray(list)) {   // z. B. 403: unbekannte Adresse (Schutz gegen fremde Webseiten)
+      $("#profiles").innerHTML = `<div class="hint">${esc(t(list?.error || "Server-Fehler"))}</div>`;
+      $("#pickHint").textContent = "";
+      return;
+    }
     $("#profiles").innerHTML = list.map((u) => `<button class="profile" data-id="${esc(u.id)}">${avatar(u, "lg")}<span>${esc(u.name)}</span>${u.has_pin ? `<span class="lock">${ic("lock")}</span>` : ""}</button>`).join("");
     $("#profiles").onclick = (e) => { const b = e.target.closest(".profile"); if (b) choose(list.find((u) => u.id === b.dataset.id)); };
     $("#pickHint").textContent = list.length === 1 ? "Weitere Personen legt der Admin unter ⚙ → Familie an." : "";
@@ -1371,6 +1379,7 @@ async function openSettings(tab = "profile") {
     if (isAdmin) {
       $("#nStart").value = p.night.start.padStart(5, "0");
       $("#nEnd").value = p.night.end.padStart(5, "0");
+      $("#cookiesAll").checked = p.cookies_all !== false;
       api("/api/cookies").then(showCookies).catch(() => {});
       $("#srvInfo").innerHTML = `Kinbox ${esc(p.version)} · yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>`;
     }
@@ -1444,7 +1453,7 @@ $("#cookieDel").addEventListener("click", async () => {
 });
 $("#srvForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  try { await api("/api/settings", { method: "POST", body: JSON.stringify({ night: { start: $("#nStart").value || "01:00", end: $("#nEnd").value || "07:00" } }) }); toast("Gespeichert"); $("#setDlg").close(); }
+  try { await api("/api/settings", { method: "POST", body: JSON.stringify({ night: { start: $("#nStart").value || "01:00", end: $("#nEnd").value || "07:00" }, cookies_all_profiles: $("#cookiesAll").checked }) }); toast("Gespeichert"); $("#setDlg").close(); }
   catch (err) { toast(err.message, true); }
 });
 

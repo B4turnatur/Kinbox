@@ -215,6 +215,8 @@ This file is created on first start. Restart the server after editing it.
 | `extra_args` | extra yt-dlp arguments for every download |
 | `site_args` | extra arguments for specific sites (includes a TikTok fix) |
 | `night` | night window, e.g. `{"start": "01:00", "end": "07:00"}` |
+| `cookies_all_profiles` | `true` (default): the cookies are used for every profile's downloads; `false`: admin only. YouTube history, Watch later and Liked are always blocked for other profiles |
+| `allowed_hosts` | extra host names the library may be opened under (e.g. a DynDNS name). IP addresses, `localhost`, `*.local`, `*.ts.net` and names without a dot always work; other names are learned automatically once used with a valid token |
 
 **Cookies:** log in in your browser, export a `cookies.txt` with an extension like "Get cookies.txt LOCALLY" and pick it in the library under ⚙ → Server → **Upload cookies.txt** – that's it. You can upload several sites (e.g. Instagram and YouTube) one after another; they get merged. Alternatively put the file on the server yourself and set `cookies_file`. Kinbox then uses them automatically for every download (phone shortcuts included). You may also point it at the folder containing `cookies.txt`.
 

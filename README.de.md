@@ -247,6 +247,8 @@ Wird beim ersten Start angelegt. Nach Änderungen den Server neu starten.
 | `extra_args` | Zusätzliche yt-dlp-Argumente für jeden Download |
 | `site_args` | Zusätzliche Argumente nur für bestimmte Seiten (enthält schon einen TikTok-Fix) |
 | `night` | Nachtfenster, z. B. `{"start": "01:00", "end": "07:00"}` |
+| `cookies_all_profiles` | `true` (Standard): Cookies gelten für die Downloads aller Profile; `false`: nur für den Admin. YouTube-Verlauf, „Später ansehen“ und „Mag ich“ sind für andere Profile immer gesperrt |
+| `allowed_hosts` | Zusätzliche Adressnamen, unter denen die Mediathek geöffnet werden darf (z. B. DynDNS). IP-Adressen, `localhost`, `*.local`, `*.ts.net` und Namen ohne Punkt gehen immer; andere Namen werden automatisch gelernt, sobald sie einmal mit gültigem Token benutzt wurden |
 
 **Cookies (für Instagram und den YouTube-Bot-Check):** Im Browser einloggen, mit einer Erweiterung wie „Get cookies.txt LOCALLY" eine `cookies.txt` exportieren und in der Mediathek unter ⚙ → Server → **cookies.txt hochladen** auswählen – fertig. Mehrere Seiten (z. B. Instagram und YouTube) nacheinander hochladen geht, sie werden zusammengeführt. Alternativ die Datei selbst auf den Server legen und den Pfad in `cookies_file` eintragen. Kinbox nutzt sie dann automatisch für alle Downloads (auch vom Handy). Statt der Datei darf auch ihr Ordner angegeben werden.
 

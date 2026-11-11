@@ -181,6 +181,8 @@
     "Uhrzeit bitte als HH:MM angeben": "Please enter the time as HH:MM", "Update läuft bereits": "Update already running",
     "Für Instagram, altersbeschränkte Videos und den YouTube-Bot-Check: im Browser einloggen, mit der Erweiterung „Get cookies.txt LOCALLY“ exportieren und hier hochladen. Mehrere Seiten nacheinander hochladen geht.": "For Instagram, age-restricted videos and YouTube's bot check: log in in your browser, export with the \"Get cookies.txt LOCALLY\" extension and upload here. You can upload several sites one after another.",
     "cookies.txt hochladen": "Upload cookies.txt", "Keine Cookies eingerichtet": "No cookies set up", "Cookies gespeichert": "Cookies saved",
+    "Cookies auch für die anderen Profile nutzen": "Use the cookies for the other profiles too", "Server-Fehler": "Server error",
+    "Aus: nur Admin-Aufträge laden mit deinen Cookies. YouTube-Verlauf, „Später ansehen“ und „Mag ich“ sind für andere Profile immer gesperrt.": "Off: only admin downloads use your cookies. YouTube history, “Watch later” and “Liked” are always blocked for other profiles.",
     "Alle Cookies entfernen?": "Remove all cookies?", "Datei zu groß": "File too large",
     "Das ist keine cookies.txt – bitte mit „Get cookies.txt LOCALLY“ exportieren": "This isn't a cookies.txt – please export it with \"Get cookies.txt LOCALLY\"",
     "Kinbox-Update": "Kinbox update", "Jetzt aktualisieren": "Update now", "Suche nach Updates …": "Checking for updates …",

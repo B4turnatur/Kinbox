@@ -124,22 +124,24 @@ assert.deepEqual(sanitizeImport({ socialOff: ["x"], socialPos: "br", notify: fal
   { socialOff: ["x"], socialPos: "br", notify: false, defaults: { quality: "720" } });
 for (const bad of [null, 5, "x", [1]]) assert.deepEqual(sanitizeImport(bad), {});
 
-// ---- Token: von storage.sync nach storage.local (einmalig), sync danach ohne Token
+// ---- Token: bleibt in storage.sync (sonst fehlt er auf anderen PCs), local ist nur Kopie/Notnagel
 const { sync, local } = chrome.storage;
 sync.data.token = "alt123"; sync.data.serverUrl = "http://nas:8765";
 let s = await C.getSettings();
 assert.equal(s.token, "alt123");
-assert.equal(local.data.token, "alt123");
-assert.ok(!("token" in sync.data), "Token aus sync gelöscht");
-assert.equal((await C.getSettings()).token, "alt123", "zweiter Start: aus local");
+assert.equal(local.data.token, "alt123", "Kopie in local");
+assert.equal(sync.data.token, "alt123", "sync behält den Token");
 await C.saveSettings({ token: "neu", notify: false });
 assert.equal(local.data.token, "neu");
-assert.ok(!("token" in sync.data));
-assert.equal(sync.data.notify, false);
-sync.data.token = "von-altem-PC";                                                      // ältere Version auf anderem PC
-assert.equal((await C.getSettings()).token, "neu", "lokaler Token gewinnt");
-assert.ok(!("token" in sync.data), "fremder sync-Token wird entfernt");
-// Android-App: sync und local sind derselbe Speicher → nichts löschen
+assert.equal(sync.data.token, "neu", "Speichern schreibt auch nach sync");
+sync.data.token = "von-anderem-PC";                                                     // anderer PC hat ihn geändert
+assert.equal((await C.getSettings()).token, "von-anderem-PC", "sync gewinnt");
+assert.equal(local.data.token, "von-anderem-PC");
+delete sync.data.token;                                                                 // 3.10.0 hat ihn in sync gelöscht
+assert.equal((await C.getSettings()).token, "von-anderem-PC", "lokale Kopie rettet");
+assert.equal(sync.data.token, "von-anderem-PC", "und heilt sync für die anderen PCs");
+delete sync.data.token; local.data.token = "";
+assert.equal((await C.getSettings()).token, "", "beides leer → leer");
 const one = area({ token: "app" });
 chrome.storage = { sync: one, local: one };
 assert.equal((await C.getSettings()).token, "app");

@@ -66,28 +66,34 @@ export const DEFAULT_SETTINGS = {
   hiddenBuiltins: [],   // ausgeblendete eingebaute Presets
 };
 
-// Token liegt nur lokal (storage.local) – nicht in Googles Sync-Speicher. Ältere Versionen hatten ihn in
-// storage.sync: einmalig übernehmen und dort löschen. In der Android-App sind sync und local derselbe Speicher.
-async function localToken(syncToken) {
+// Token liegt in storage.sync (wie bis 3.9) und zusätzlich als Kopie in storage.local.
+// 3.10.0 hatte ihn aus sync gelöscht – Chrome hat das Löschen auf alle PCs mit demselben Google-Konto
+// übertragen („Falscher oder fehlender Token“ dort). Jetzt: sync gewinnt; fehlt er dort, aber lokal ist
+// noch einer (von 3.10.0 umgezogen), wird er nach sync zurückgeschrieben und heilt die anderen PCs.
+// In der Android-App sind sync und local derselbe Speicher.
+async function syncedToken(syncToken) {
   const { sync, local } = chrome.storage;
   if (!local || sync === local) return syncToken || "";
-  const { token } = await local.get({ token: null });
-  if (token == null) await local.set({ token: syncToken || "" });
-  if (syncToken) await sync.remove("token");
-  return token ?? (syncToken || "");
+  const { token: localTok = "" } = await local.get("token");
+  if (syncToken) {
+    if (localTok !== syncToken) await local.set({ token: syncToken });
+    return syncToken;
+  }
+  if (localTok) await sync.set({ token: localTok });
+  return localTok || "";
 }
 
 export async function getSettings() {
   const s = await chrome.storage.sync.get(DEFAULT_SETTINGS);
-  s.token = await localToken(s.token);
+  s.token = await syncedToken(s.token);
   s.defaults = deepMerge(structuredClone(DEFAULT_OPTIONS), s.defaults || {});
   return s;
 }
 
 export async function saveSettings(patch) {
   const { token, ...rest } = patch;
-  if (token !== undefined) await (chrome.storage.local || chrome.storage.sync).set({ token });
-  if (Object.keys(rest).length) await chrome.storage.sync.set(rest);
+  if (token !== undefined && chrome.storage.local && chrome.storage.local !== chrome.storage.sync) await chrome.storage.local.set({ token });
+  await chrome.storage.sync.set(token !== undefined ? { ...rest, token } : rest);
 }
 
 export async function allPresets() {

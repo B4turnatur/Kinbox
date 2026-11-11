@@ -62,6 +62,8 @@ DEFAULT_SETTINGS = {
         "max_size_gb": 0,             # 0 = aus, sonst älteste löschen, wenn größer
     },
     "night": {"start": "01:00", "end": "07:00"},   # Zeitfenster für „nachts laden"
+    "cookies_all_profiles": True,     # Admin-Cookies auch für Aufträge der anderen Profile
+    "allowed_hosts": [],              # zusätzliche Hostnamen (z. B. DynDNS) für Profilauswahl/Anmeldung
 }
 NESTED_DEFAULTS = ("cleanup", "night")
 
@@ -169,14 +171,16 @@ def to_seconds(t: str) -> float:
     return s
 
 
+WIN_RESERVED = re.compile(r"^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$", re.I)
+
+
 def safe_subfolder(sub: str) -> str:
+    """Unterordner aus Nutzereingabe: keine Pfad-Tricks, keine Windows-Gerätenamen, nicht beliebig lang/tief."""
     sub = (sub or "").strip().replace("\\", "/")
     parts = [p for p in sub.split("/") if p not in ("", ".", "..")]
-    cleaned = [re.sub(r'[<>:"|?*\x00-\x1f]', "_", p).strip(" .") for p in parts]
-    return "/".join(p for p in cleaned if p)
-
-
-WIN_RESERVED = re.compile(r"^(con|prn|aux|nul|com\d|lpt\d)(\..*)?$", re.I)
+    cleaned = [re.sub(r'[<>:"|?*\x00-\x1f]', "_", p)[:80].strip(" .") for p in parts]
+    cleaned = ["_" + p if WIN_RESERVED.match(p) else p for p in cleaned if p]
+    return "/".join(cleaned[:8])
 
 
 def safe_name(name: str, maxlen: int, fallback: str) -> str:
@@ -416,9 +420,27 @@ def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: P
     return a
 
 
-def cookie_args(work: Path) -> list[str]:
+PRIVATE_FEED_RE = re.compile(r"youtube\.com/feed/|[?&]list=(WL|LL)(&|#|$)", re.I)
+
+
+def check_private_url(url: str, user: dict | None):
+    """„Später ansehen“, „Mag ich“, Verlauf & Co. gehören zum Google-Konto der Cookies (Admin) –
+    andere Profile dürfen sie nie abrufen, auch wenn die Cookies für alle gelten."""
+    if user is not None and user.get("role") != "admin" and PRIVATE_FEED_RE.search(url or ""):
+        raise OptionError("Diese YouTube-Liste ist privat und nur für den Admin abrufbar")
+
+
+def cookies_for(user: dict | None) -> bool:
+    """None = Server selbst / alte Aufrufe → wie bisher; sonst Admin immer, andere nur, wenn erlaubt."""
+    return user is None or user.get("role") == "admin" or SETTINGS.get("cookies_all_profiles", True) is not False
+
+
+def cookie_args(work: Path, url: str = "", user: dict | None = None) -> list[str]:
     """Kopiert cookies_file nach work/ – yt-dlp schreibt Cookies am Ende zurück; bei schreibgeschützter
     oder gleichzeitig genutzter Originaldatei gab das „Errno 13 Permission denied“."""
+    check_private_url(url, user)
+    if not cookies_for(user):
+        return []
     src = Path(SETTINGS.get("cookies_file") or "")
     if not str(src).strip() or str(src) == ".":
         return []
@@ -434,6 +456,45 @@ def cookie_args(work: Path) -> list[str]:
     except OSError as e:
         raise OptionError(f"Cookie-Datei nicht lesbar: {e}")
     return ["--cookies", str(dst)]
+
+
+NOWIN = {"creationflags": 0x08000000} if IS_WINDOWS else {}     # CREATE_NO_WINDOW
+# eigene Prozessgruppe, damit Abbrechen auch Enkelprozesse (yt-dlp.exe entpackt sich und startet sich neu) erwischt
+GROUP = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000} if IS_WINDOWS else {"start_new_session": True}
+
+
+def kill_tree(p: subprocess.Popen):
+    """Prozess samt Kindern beenden – p.kill() allein ließe bei yt-dlp.exe/pip den eigentlichen Prozess weiterlaufen."""
+    if not p or p.poll() is not None:
+        return
+    try:
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], capture_output=True, timeout=30, **NOWIN)
+        else:
+            os.killpg(p.pid, signal.SIGTERM)
+    except Exception:
+        pass
+    try:
+        p.kill()
+    except Exception:
+        pass
+
+
+def run_tool(cmd: list[str], timeout: float, **kw) -> subprocess.CompletedProcess:
+    """Wie subprocess.run(capture_output=True), aber bei Zeitüberschreitung wird der ganze Prozessbaum beendet –
+    sonst hängt communicate() weiter, weil der Enkelprozess die Pipes offen hält."""
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         stdin=kw.pop("stdin", subprocess.DEVNULL), **GROUP, **kw)
+    try:
+        out, err_ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_tree(p)
+        try:
+            p.communicate(timeout=10)
+        except Exception:
+            pass
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    return subprocess.CompletedProcess(cmd, p.returncode, out, err_)
 
 
 def merge_cookies(old: str, new: str) -> str:
@@ -487,17 +548,29 @@ class Job:
         self.cancel_requested = False
         self.meta: dict = {}                       # zuletzt gemeldete Video-Infos von yt-dlp
         self.file_meta: dict[str, dict] = {}       # Datei -> Video-Infos (für die Mediathek)
+        self.lock = threading.Lock()               # Abbrechen vs. Prozessstart
+        self._files_cache: tuple = (None, 0.0, [])  # (Dateiliste, Zeit, Ergebnis) – stat nicht bei jedem Abruf
+
+    def files_public(self) -> list[dict]:
+        """Größe/Existenz: bei laufenden und gerade fertigen Aufträgen frisch, sonst höchstens alle 5 min."""
+        key, now = tuple(self.files), time.time()
+        cached_key, t, res = self._files_cache
+        active = self.status in ("running", "queued", "scheduled") or now - (self.finished or 0) < 120
+        if active or cached_key != key or now - t > 300:
+            res = [{"name": Path(f).name, "size": _size(f), "exists": os.path.exists(f)} for f in key]
+            self._files_cache = (key, now, res)
+        return res
 
     def public(self, with_log=False) -> dict:
         d = {k: getattr(self, k) for k in self.PUBLIC}
-        d["files"] = [{"name": Path(f).name, "size": _size(f), "exists": Path(f).exists()} for f in self.files]
+        d["files"] = self.files_public()
         if with_log:
             d["log"] = list(self.log)
         return d
 
     def to_disk(self) -> dict:
-        d = self.public()
-        d["files"] = self.files
+        d = {k: getattr(self, k) for k in self.PUBLIC}
+        d["files"] = list(self.files)
         return d
 
     @classmethod
@@ -556,13 +629,29 @@ def _saver():
         _save_pending.wait()
         time.sleep(1.5)
         _save_pending.clear()
-        with JOBS_LOCK:
-            jobs = sorted(JOBS.values(), key=lambda j: j.created)[-SETTINGS["keep_history"]:]
-            data = [j.to_disk() for j in jobs]
-        try:
-            write_atomic(JOBS_FILE, json.dumps(data, ensure_ascii=False))
-        except OSError as e:   # z. B. Platte voll – der Thread darf nicht sterben, sonst wird nie wieder gespeichert
-            print(f"[!] jobs.json nicht gespeichert: {e}")
+        save_jobs()
+
+
+ACTIVE = ("queued", "scheduled", "running")
+
+
+def save_jobs():
+    """Wartende/geplante/laufende Aufträge immer behalten; von den fertigen nur die neuesten keep_history –
+    auch im Speicher, sonst wächst JOBS bei jahrelangem Betrieb (Abos!) endlos."""
+    try:
+        keep = max(0, int(SETTINGS.get("keep_history") or 0))
+    except (TypeError, ValueError):
+        keep = 200
+    with JOBS_LOCK:
+        done = sorted((j for j in JOBS.values() if j.status not in ACTIVE), key=lambda j: j.created)
+        for j in done[:max(0, len(done) - keep)]:
+            JOBS.pop(j.id, None)
+        jobs = sorted(JOBS.values(), key=lambda j: j.created)
+        data = [j.to_disk() for j in jobs]
+    try:
+        write_atomic(JOBS_FILE, json.dumps(data, ensure_ascii=False))
+    except Exception as e:   # z. B. Platte voll – der Thread darf nicht sterben, sonst wird nie wieder gespeichert
+        print(f"[!] jobs.json nicht gespeichert: {e}")
 
 
 def _running_count() -> int:
@@ -646,9 +735,11 @@ def run_job(job: Job):
 def _run_job(job: Job):
     if job.options.get("edit"):
         return run_edit(job)
-    root = user_root(USERS.get(job.owner) or admin_user())
+    owner = USERS.get(job.owner)
+    root = user_root(owner or admin_user())
     job_dir = root / job.subfolder if job.subfolder else root
     job_dir.mkdir(parents=True, exist_ok=True)
+    thumb_mode = job.options.get("mode") == "thumbnail"
     try:
         temp_dir = download_root() / ".tmp" / job.id
         opts, sound = job.options, None
@@ -663,27 +754,30 @@ def _run_job(job: Job):
                     and not opts.get("musicTags"):
                 opts["filenameTemplate"] = f"%(track,title)s [{sid}].%(ext)s"
         conv_type = (job.options.get("convert") or {}).get("type", "none")
-        # Bei GIF/Verkleinern landet das Original erst im Arbeitsordner, damit sich Aufträge nicht in die Quere kommen
-        work_dir = temp_dir / "out" if conv_type in ("gif", "small") else job_dir
-        args = cookie_args(temp_dir) + build_args(opts, work_dir, temp_dir, archive_dir=root)
+        # GIF/Verkleinern/Bild landen erst im eigenen Arbeitsordner, damit sich Aufträge nicht in die Quere kommen
+        # (Bild: das Ergebnis wird dort gesucht – im Zielordner könnten Bilder anderer Aufträge liegen)
+        work_dir = temp_dir / "out" if conv_type in ("gif", "small") or thumb_mode else job_dir
+        args = cookie_args(temp_dir, job.url, owner) + build_args(opts, work_dir, temp_dir, archive_dir=root)
     except OptionError as e:
         job.status, job.error, job.stage = "error", str(e), "Fehler"
         return
-    if job.options.get("mode") == "thumbnail" and (avatar := avatar_url(tiktok_full(job.url))):
+    if job.cancel_requested:
+        return _cancelled(job, job_dir)
+    if thumb_mode and (avatar := avatar_url(tiktok_full(job.url))):
         return run_photos(job, job_dir, url=avatar)
     if job.options.get("mode") != "audio" and is_photo_post(job.url):
         return run_photos(job, job_dir)
     cmd = ytdlp_base() + args
     job.log.append("$ " + " ".join(cmd))
 
-    kw = {}
-    if IS_WINDOWS:
-        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000  # CREATE_NO_WINDOW
-    else:
-        kw["start_new_session"] = True
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
-    job.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                stdin=subprocess.DEVNULL, env=env, **kw)
+    try:
+        start_proc(job, cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+    except OptionError:
+        return _cancelled(job, job_dir)
+    except OSError as e:
+        job.status, job.stage, job.error = "error", "Fehler", f"yt-dlp nicht gefunden: {e}"
+        return
     job.stage = "Lädt Infos"
     last_error = ""
     for raw in job.proc.stdout:
@@ -733,10 +827,10 @@ def _run_job(job: Job):
             last_error = line[6:].strip()
     rc = job.proc.wait()
     if job.cancel_requested:
-        job.status, job.stage = "cancelled", "Abgebrochen"
+        _cancelled(job, job_dir)
     elif rc == 0:
-        if job.options.get("mode") == "thumbnail":
-            job.files = _find_recent(job_dir, job.created, (".jpg", ".png", ".webp"))
+        if thumb_mode:
+            job.files = _collect_out(work_dir, job_dir, (".jpg", ".jpeg", ".png", ".webp"))
             for f in job.files:
                 job.file_meta[f] = dict(job.meta)
             if not job.files:
@@ -748,8 +842,7 @@ def _run_job(job: Job):
                 also_audio(job)
             except OptionError as e:
                 if job.cancel_requested:
-                    job.status, job.stage = "cancelled", "Abgebrochen"
-                    return
+                    return _cancelled(job, job_dir)
                 audio_err = f"Audio-Datei: {e}"      # Video ist trotzdem fertig
         conv = (job.options.get("convert") or {}).get("type", "none")
         if conv in ("gif", "small"):
@@ -757,7 +850,7 @@ def _run_job(job: Job):
                 convert_job_files(job, conv, job_dir)
             except OptionError as e:
                 if job.cancel_requested:
-                    job.status, job.stage = "cancelled", "Abgebrochen"
+                    _cancelled(job, job_dir)
                 else:
                     job.status, job.stage, job.error = "error", "Fehler", str(e)
                 return
@@ -774,12 +867,53 @@ def _run_job(job: Job):
         job.error = last_error or f"yt-dlp beendet mit Code {rc}"
 
 
-def _find_recent(folder: Path, since: float, exts) -> list[str]:
+def _collect_out(work: Path, job_dir: Path, exts) -> list[str]:
+    """Ergebnisse aus dem eigenen Arbeitsordner ins Ziel verschieben (Unterordner der Vorlage bleiben erhalten)."""
     out = []
-    for p in folder.rglob("*"):
-        if p.is_file() and p.suffix.lower() in exts and p.stat().st_mtime >= since - 2:
-            out.append(str(p))
+    if not work.exists():
+        return out
+    for p in sorted(work.rglob("*")):
+        if p.is_file() and p.suffix.lower() in exts:
+            dest = unique_path(job_dir / p.relative_to(work))
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(p), dest)
+            out.append(str(dest))
     return out
+
+
+def _cancelled(job: Job, job_dir: Path):
+    """Abgebrochen: schon fertige Dateien (z. B. erste Videos einer Playlist) in die Mediathek übernehmen statt sie
+    verwaist liegen zu lassen. Originale aus dem Arbeitsordner (GIF/Verkleinern) vorher ins Ziel retten."""
+    job.status, job.stage = "cancelled", "Abgebrochen"
+    tmp = (download_root() / ".tmp" / job.id).resolve()
+    kept = []
+    for f in job.files:
+        p = Path(f)
+        if not p.is_file():
+            continue
+        if tmp in p.resolve().parents:
+            dest = unique_path(job_dir / p.name)
+            try:
+                job_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(p), dest)
+            except OSError:
+                continue
+            job.file_meta[str(dest)] = job.file_meta.get(f) or dict(job.meta)
+            p = dest
+        kept.append(str(p))
+    job.files = kept
+    for f in kept:
+        lib_add(f, job.file_meta.get(f) or job.meta, job)
+
+
+def start_proc(job: Job, cmd: list[str], **kw) -> subprocess.Popen:
+    """Prozess für einen Auftrag starten – nie, wenn schon abgebrochen wurde. Ohne diese Prüfung lief nach einem
+    Abbrechen zwischen zwei Schritten (yt-dlp → ffmpeg) der nächste Schritt trotzdem los."""
+    with job.lock:
+        if job.cancel_requested:
+            raise OptionError("Abgebrochen")
+        job.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, **GROUP, **kw)
+        return job.proc
 
 
 def _progress(job: Job, payload: str):
@@ -805,18 +939,10 @@ def _progress(job: Job, payload: str):
 
 
 def kill_job(job: Job):
-    job.cancel_requested = True
-    p = job.proc
-    if not p or p.poll() is not None:
-        return
-    try:
-        if IS_WINDOWS:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)],
-                           capture_output=True, creationflags=0x08000000)
-        else:
-            os.killpg(p.pid, signal.SIGTERM)
-    except Exception:
-        p.kill()
+    with job.lock:
+        job.cancel_requested = True
+        p = job.proc
+    kill_tree(p)
 
 
 # --------------------------------------------------------------------------- #
@@ -939,8 +1065,10 @@ def ensure_gallerydl():
         return
     with _update_lock:
         if not importlib.util.find_spec("gallery_dl"):
-            subprocess.run([sys.executable, "-m", "pip", "install", "gallery-dl"], capture_output=True, timeout=300,
-                           **({"creationflags": 0x08000000} if IS_WINDOWS else {}))
+            try:
+                run_tool([sys.executable, "-m", "pip", "install", "gallery-dl"], timeout=300)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
             importlib.invalidate_caches()
     if not importlib.util.find_spec("gallery_dl"):
         raise OptionError("gallery-dl fehlt – bitte „pip install gallery-dl“ ausführen")
@@ -961,16 +1089,18 @@ def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = ""):
     out = download_root() / ".tmp" / job.id / "photos"
     try:
         ensure_gallerydl()
-        cmd = gallerydl_base() + cookie_args(out.parent) + ["--write-metadata", "-D", str(out), "--", url or job.url]
+        cmd = gallerydl_base() + cookie_args(out.parent, job.url, USERS.get(job.owner)) + \
+            ["--write-metadata", "-D", str(out), "--", url or job.url]
     except OptionError as e:
         job.status, job.stage, job.error = "error", "Fehler", str(e)
         return
     job.log.append("$ " + " ".join(cmd))
-    kw = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000} if IS_WINDOWS else {"start_new_session": True}
     job.stage, job.percent = "Lädt Fotos", 0.0
     try:
-        job.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                    env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}, **kw)
+        start_proc(job, cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                   env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
+    except OptionError:
+        return _cancelled(job, job_dir)
     except OSError as e:
         job.status, job.stage, job.error = "error", "Fehler", f"gallery-dl nicht gefunden: {e}"
         return
@@ -986,11 +1116,12 @@ def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = ""):
             n += 1
             job.stage = f"Lädt Fotos ({n})"
     job.proc.wait()
-    if job.cancel_requested:
-        job.status, job.stage = "cancelled", "Abgebrochen"
-        return
-    media = sorted((f for f in out.glob("*") if f.is_file() and f.suffix.lower() != ".json"),
+    cancelled = job.cancel_requested
+    # .part = halb geladen (gallery-dl), beim Abbrechen nur die fertigen Bilder behalten
+    media = sorted((f for f in out.glob("*") if f.is_file() and f.suffix.lower() not in (".json", ".part")),
                    key=lambda f: (kind_of(f.name) != "image", f.name)) if out.exists() else []
+    if cancelled and not media:
+        return _cancelled(job, job_dir)
     if not media:
         job.status, job.stage = "error", "Fehler"
         job.error = ytdlp_error or last_error or "Keine Fotos gefunden"
@@ -1020,6 +1151,8 @@ def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = ""):
                                    "uploader": m["uploader"], "webpage_url": job.url, "album": album}
     if job.title == job.url:
         job.title = title
+    if cancelled:
+        return _cancelled(job, job_dir)       # übernimmt die fertigen Bilder in die Mediathek
     job.status, job.stage, job.percent = "finished", "Fertig", 100.0
     for f in job.files:
         lib_add(f, job.file_meta[f], job)
@@ -1083,31 +1216,110 @@ def lib_load():
 def lib_prune_missing() -> bool:
     """Einträge ohne Datei entfernen. Fehlen ALLE Dateien, ist eher die Platte (NAS, USB) gerade weg –
     dann nichts anfassen, sonst wären Titel, Favoriten und Freigaben verloren. False = Speicher fehlt."""
+    global _last_prune
     with LIB_LOCK:
         gone = [eid for eid, e in LIB.items() if not Path(e["path"]).exists()]
         if gone and len(gone) == len(LIB):
             return False   # ponytail: alles-oder-nichts; fällt nur ein Unterordner aus, wird trotzdem aufgeräumt
         for eid in gone:
             LIB.pop(eid, None)
+            for ext in (".jpg", ".none"):        # Vorschaubild gehört zum Eintrag
+                try:
+                    (THUMB_DIR / (eid + ext)).unlink(missing_ok=True)
+                except OSError:
+                    pass
+        _last_prune = time.time()
+        if gone:
+            lib_save_soon()
         return True
 
 
+_last_prune = 0.0
+_LIB_WRITE = threading.Lock()        # Reihenfolge der Schreibvorgänge = Reihenfolge der Momentaufnahmen
+_lib_dirty = threading.Event()
+
+
 def lib_save():
-    with LIB_LOCK:
-        data = {"entries": list(LIB.values()), "cleanup_log": list(CLEANUP_LOG)}
-        write_atomic(LIBRARY_FILE, json.dumps(data, ensure_ascii=False))
+    """Sofort speichern. Unter LIB_LOCK nur die Momentaufnahme – das Schreiben (Platte, Virenscanner) blockiert
+    die Mediathek nicht."""
+    with _LIB_WRITE:
+        _lib_dirty.clear()
+        with LIB_LOCK:
+            text = json.dumps({"entries": list(LIB.values()), "cleanup_log": list(CLEANUP_LOG)}, ensure_ascii=False)
+        write_atomic(LIBRARY_FILE, text)
+
+
+def lib_save_soon():
+    """Entprellt speichern: viele Änderungen kurz hintereinander (Playlist, Aufräumen) = ein Schreibvorgang."""
+    _lib_dirty.set()
+    _start_lib_saver()
+
+
+_lib_saver_started = threading.Lock()
+_lib_saver_running = False
+
+
+def _start_lib_saver():
+    global _lib_saver_running
+    if _lib_saver_running:
+        return
+    with _lib_saver_started:
+        if not _lib_saver_running:
+            threading.Thread(target=_lib_saver, daemon=True).start()
+            _lib_saver_running = True
+
+
+def _lib_saver():
+    while True:
+        _lib_dirty.wait()
+        time.sleep(1.5)
+        if not _lib_dirty.is_set():      # inzwischen synchron gespeichert
+            continue
+        try:
+            lib_save()
+        except Exception as e:           # Thread darf nicht sterben
+            print(f"[!] library.json nicht gespeichert: {e}")
+
+
+def flush_all():
+    """Vor Neustart/Beenden: ausstehende Änderungen sofort schreiben."""
+    for f, pending in ((lib_save, _lib_dirty.is_set()), (save_jobs, _save_pending.is_set())):
+        if pending:
+            try:
+                f()
+            except Exception as e:
+                print(f"[!] Speichern beim Beenden fehlgeschlagen: {e}")
+
+
+_PATH_INDEX: dict[str, str] = {}      # normcase(abspath) → Eintrag-ID
+
+
+def _pkey(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path))
 
 
 def lib_by_path(path: str) -> dict | None:
-    rp = str(Path(path).resolve())
+    """Eintrag zu einem Pfad – über einen Index statt resolve() für jeden Eintrag (bei 10 000 Dateien spürbar)."""
+    k = _pkey(path)
     with LIB_LOCK:
-        return next((e for e in LIB.values() if str(Path(e["path"]).resolve()) == rp), None)
+        eid = _PATH_INDEX.get(k)
+        e = LIB.get(eid) if eid else None
+        if e and _pkey(e["path"]) == k:
+            return e
+        if len(_PATH_INDEX) != len(LIB) or eid:     # Index veraltet (Eintrag umbenannt/entfernt) → neu aufbauen
+            _PATH_INDEX.clear()
+            _PATH_INDEX.update((_pkey(x["path"]), i) for i, x in LIB.items())
+            eid = _PATH_INDEX.get(k)
+            return LIB.get(eid) if eid else None
+        return None
 
 
 def lib_add(path: str, meta: dict, job: "Job") -> dict:
     existing = lib_by_path(path)
     size = _size(path)
     with LIB_LOCK:
+        # Profil inzwischen gelöscht (Auftrag lief noch) → Datei gehört dem Admin statt niemandem
+        owner = job.owner if job.owner in USERS or not USERS else admin_user()["id"]
         if existing:
             existing.update(size=size, added=time.time(), job_id=job.id)
             entry = existing
@@ -1121,10 +1333,11 @@ def lib_add(path: str, meta: dict, job: "Job") -> dict:
                 "uploader": meta.get("uploader") or "", "duration": meta.get("duration") or 0,
                 "added": time.time(), "size": size, "kind": kind_of(path), "pinned": False,
                 "job_id": job.id, "pc_downloaded": None, "delete_at": None,
-                "owner": job.owner, "shared": False, "album": meta.get("album") or "",
+                "owner": owner, "shared": False, "album": meta.get("album") or "",
             }
             LIB[entry["id"]] = entry
-    lib_save()
+            _PATH_INDEX[_pkey(path)] = entry["id"]
+    lib_save_soon()
     threading.Thread(target=thumb_file, args=(entry,), daemon=True).start()   # bevor der Link abläuft
     return entry
 
@@ -1153,25 +1366,31 @@ def lib_delete(eid: str, reason: str = "") -> bool:
             return False       # z. B. unter Windows noch geöffnet – später erneut versuchen
         _remove_empty_dirs(p)
         LIB.pop(eid, None)
+        _PATH_INDEX.pop(_pkey(e["path"]), None)
         for ext in (".jpg", ".none"):
             (THUMB_DIR / (eid + ext)).unlink(missing_ok=True)
         if reason:
             CLEANUP_LOG.appendleft({"time": time.time(), "name": e["name"], "size": e.get("size", 0),
                                     "reason": reason, "owner": e.get("owner")})
-    lib_save()
+    lib_save_soon()
     return True
 
 
-def lib_public(e: dict) -> dict:
+def lib_public(e: dict, roots: dict | None = None) -> dict:
+    """roots: Zwischenspeicher Besitzer → Ordner für eine ganze Liste (sonst pro Eintrag mkdir + Pfadrechnung)."""
     d = {k: e.get(k) for k in ("id", "name", "title", "url", "thumbnail", "uploader", "duration",
                                "added", "size", "kind", "pinned", "extractor", "pc_downloaded", "delete_at",
                                "owner", "shared", "album")}
     owner = USERS.get(e.get("owner") or "")
     d["owner_name"] = owner["name"] if owner else "?"
     d["owner_avatar"] = owner["avatar"] if owner else "❔"
+    if roots is None:
+        roots = {}
+    oid = owner["id"] if owner else ""
+    if oid not in roots:
+        roots[oid] = user_root(owner, create=False) if owner else download_root()
     try:
-        root = user_root(owner) if owner else download_root()
-        d["folder"] = str(Path(e["path"]).parent.relative_to(root))
+        d["folder"] = str(Path(e["path"]).parent.relative_to(roots[oid]))
     except ValueError:
         d["folder"] = ""
     if d["folder"] == ".":
@@ -1193,33 +1412,119 @@ def thumb_file(e: dict) -> Path | None:
         if out.exists() or none.exists():
             return out if out.exists() else None
         THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        web = THUMB_DIR / f"{e['id']}.web"
         tries = []
-        if (e.get("thumbnail") or "").startswith("http"):
-            tries.append(["-user_agent", "Mozilla/5.0", "-i", e["thumbnail"]])
+        if (e.get("thumbnail") or "").startswith("http") and fetch_image(e["thumbnail"], web):
+            tries.append(["-i", str(web)])
         if e.get("kind") == "video":
             tries.append(["-ss", str(min(1.0, (e.get("duration") or 0) / 3)), "-i", e["path"]])
-        if e.get("kind") in ("video", "audio"):
+        if e.get("kind") in ("video", "audio", "image", "gif"):   # Bild/GIF: kleine Vorschau statt Originaldatei
             tries.append(["-i", e["path"]])
-        for src in tries:
-            tmp = out.with_suffix(".part.jpg")
-            try:
-                subprocess.run([ffmpeg_bin("ffmpeg"), "-v", "error", "-y"] + src + ["-an", "-frames:v", "1",
-                               "-vf", "scale='min(480,iw)':-2", str(tmp)], capture_output=True, timeout=30,
-                               **({"creationflags": 0x08000000} if IS_WINDOWS else {}))
-            except (OSError, subprocess.TimeoutExpired):
-                continue
-            if tmp.exists() and tmp.stat().st_size:
-                os.replace(tmp, out)
-                return out
-            tmp.unlink(missing_ok=True)
+        try:
+            for src in tries:
+                tmp = out.with_suffix(".part.jpg")
+                try:
+                    subprocess.run([ffmpeg_bin("ffmpeg"), "-v", "error", "-y"] + src + ["-an", "-frames:v", "1",
+                                   "-vf", "scale='min(480,iw)':-2", str(tmp)], capture_output=True, timeout=30, **NOWIN)
+                except (OSError, subprocess.TimeoutExpired):
+                    continue
+                if tmp.exists() and tmp.stat().st_size:
+                    os.replace(tmp, out)
+                    return out
+                tmp.unlink(missing_ok=True)
+        finally:
+            web.unlink(missing_ok=True)
         none.touch()
         return None
 
 
-def lib_stats(owner: str | None = None) -> dict:
+def thumbs_migrate():
+    """Bis 3.17: Bilder/GIFs ohne Vorschaubild der Seite bekamen sofort <id>.none – einmalig entfernen, damit sie jetzt
+    eine kleine Vorschau aus der Datei bekommen (statt die Mediathek die ganze Originaldatei laden zu lassen)."""
+    mark = THUMB_DIR / ".bilder-v2"
+    if mark.exists() or not THUMB_DIR.exists():
+        return
     with LIB_LOCK:
-        alive = [e for e in LIB.values() if Path(e["path"]).exists() and (owner is None or e.get("owner") == owner)]
-        return {"count": len(alive), "size": sum(_size(e["path"]) for e in alive)}
+        ids = [e["id"] for e in LIB.values() if e.get("kind") in ("image", "gif")]
+    for eid in ids:
+        try:
+            (THUMB_DIR / f"{eid}.none").unlink(missing_ok=True)
+        except OSError:
+            pass
+    mark.touch()
+
+
+IMAGE_MAGIC = (b"\xff\xd8\xff", b"\x89PNG", b"GIF8", b"RIFF", b"BM")
+
+
+def public_ip(ip: str) -> bool:
+    import ipaddress
+    try:
+        a = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    if getattr(a, "ipv4_mapped", None):
+        a = a.ipv4_mapped
+    return a.is_global and not a.is_multicast
+
+
+def public_http_url(url: str) -> bool:
+    """Nur http(s) zu öffentlichen Adressen – sonst könnte ein Auftrag mit thumbnail=http://192.168.…/ den Server
+    Geräte im Heimnetz (Router, NAS) abfragen lassen (SSRF). Alle aufgelösten Adressen müssen öffentlich sein."""
+    import socket
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(url)
+        if u.scheme not in ("http", "https") or not u.hostname:
+            return False
+        infos = socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+    except (ValueError, OSError):
+        return False
+    return bool(infos) and all(public_ip(i[4][0]) for i in infos)
+
+
+def fetch_image(url: str, dst: Path, limit: int = 10_000_000) -> bool:
+    """Vorschaubild der Seite selbst laden (statt ffmpeg die URL zu geben): jede Weiterleitung wird erneut geprüft,
+    und ffmpeg bekommt nur eine lokale Datei, die wirklich ein Bild ist (keine Playlists/andere Protokolle)."""
+    import urllib.request
+
+    class Check(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            if not public_http_url(newurl):
+                raise OSError("Weiterleitung zu nicht erlaubter Adresse")
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    if not public_http_url(url):
+        return False
+    try:
+        opener = urllib.request.build_opener(Check)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with opener.open(req, timeout=20) as r:
+            data = r.read(limit + 1)
+    except Exception:
+        return False
+    if len(data) > limit or not data.startswith(IMAGE_MAGIC) and data[4:8] != b"ftyp":
+        return False
+    if data.startswith(b"RIFF") and data[8:12] != b"WEBP":
+        return False
+    dst.write_bytes(data)
+    return True
+
+
+def lib_stats(owner: str | None = None, items=None) -> dict:
+    """Anzahl/Belegung aus der gespeicherten Größe – ohne stat pro Datei. items: schon geprüfte Liste (vorhanden)."""
+    with LIB_LOCK:
+        mine = [e for e in (LIB.values() if items is None else items) if owner is None or e.get("owner") == owner]
+        return {"count": len(mine), "size": sum(_esize(e) for e in mine)}
+
+
+def _esize(e: dict) -> int:
+    if "size" not in e:                  # sehr alte Einträge: einmal nachmessen
+        e["size"] = _size(e.get("path") or "")
+    try:
+        return int(e.get("size") or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 # --------------------------------------------------------------------------- #
@@ -1235,7 +1540,7 @@ USERS_LOCK = threading.RLock()
 AVATARS = ["😀", "😎", "🦊", "🐼", "🐯", "🦄", "🐸", "🐙", "🦁", "🐶", "🐱", "🐻", "🚀", "⚽", "🎮", "🎧", "🌸", "👑"]
 COLORS = ["#7c5cff", "#ff6b6b", "#3ecf8e", "#f5a524", "#2fb7ff", "#ff5cc8", "#9aa0a6", "#00c2a8"]
 DEFAULT_USER_CLEANUP = {"after_pc_download": False, "max_age_days": 0, "max_size_gb": 0}
-_pin_fails: dict[str, list[float]] = {}
+_pin_fails: dict[str, dict] = {}       # "ip:<Adresse>" / "u:<Profil>" → Zähler, Sperre
 _PIN_LOCK = threading.Lock()
 
 
@@ -1243,9 +1548,15 @@ def _hash_pin(pin: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", pin.encode(), salt.encode(), 120_000).hex()
 
 
+_USERS_WRITE = threading.Lock()
+
+
 def users_save():
-    with USERS_LOCK:
-        write_atomic(USERS_FILE, json.dumps(list(USERS.values()), indent=2, ensure_ascii=False))
+    """Unter USERS_LOCK nur die Momentaufnahme; geschrieben wird außerhalb (Reihenfolge über _USERS_WRITE)."""
+    with _USERS_WRITE:
+        with USERS_LOCK:
+            text = json.dumps(list(USERS.values()), indent=2, ensure_ascii=False)
+        write_atomic(USERS_FILE, text)
 
 
 def folder_name(name: str) -> str:
@@ -1319,9 +1630,10 @@ def user_by_token(token: str) -> dict | None:
     return None
 
 
-def user_root(u: dict) -> Path:
+def user_root(u: dict, create: bool = True) -> Path:
     p = download_root() / safe_subfolder(u.get("folder", "")) if u.get("folder") else download_root()
-    p.mkdir(parents=True, exist_ok=True)
+    if create:
+        p.mkdir(parents=True, exist_ok=True)
     return p
 
 
@@ -1337,8 +1649,9 @@ def user_public(u: dict, private=False) -> dict:
 
 
 def user_usage(uid: str) -> int:
+    """Belegung aus der gespeicherten Größe (fehlende Dateien räumt der Aufräumer stündlich weg)."""
     with LIB_LOCK:
-        return sum(_size(e["path"]) for e in LIB.values() if e.get("owner") == uid and Path(e["path"]).exists())
+        return sum(_esize(e) for e in LIB.values() if e.get("owner") == uid)
 
 
 def check_quota(u: dict):
@@ -1347,19 +1660,45 @@ def check_quota(u: dict):
         raise OptionError(f"Dein Speicher ist voll ({q:g} GB). Lösche etwas in der Mediathek oder frag den Admin.")
 
 
-def check_pin(u: dict, pin: str) -> bool:
+PIN_IP_TRIES, PIN_USER_TRIES = 8, 30      # Fehlversuche bis zur Sperre: pro Gerät (IP) / pro Profil (alle Geräte)
+PIN_LOCK_BASE, PIN_LOCK_MAX = 300, 86400   # erste Sperre 5 min, jede weitere doppelt so lang, höchstens 1 Tag
+
+
+def _pin_state(key: str, now: float) -> dict:
+    st = _pin_fails.setdefault(key, {"n": 0, "until": 0.0, "level": 0, "last": 0.0})
+    if now - st["last"] > 3600:          # eine Stunde Ruhe: Zähler zurück
+        st["n"] = 0
+    if now - st["last"] > 86400:         # einen Tag Ruhe: Sperrstufe zurück
+        st["level"] = 0
+    return st
+
+
+def check_pin(u: dict, pin: str, ip: str = "") -> bool:
+    """Sperre vor allem pro Gerät (IP): ein Angreifer sperrt sich selbst aus, nicht den Admin an seinem Gerät.
+    Zusätzlich pro Profil mit höherer Schwelle (viele Geräte), jeweils exponentiell länger."""
     # Sperre um Zählen + Prüfen: sonst sehen parallele Anfragen alle denselben Zählerstand und umgehen das Limit
     with _PIN_LOCK:
         now = time.time()
-        fails = [t for t in _pin_fails.get(u["id"], []) if now - t < 300]
-        if len(fails) >= 8:
-            raise OptionError("Zu viele falsche Versuche – bitte 5 Minuten warten.")
+        sts = [(_pin_state("ip:" + ip, now), PIN_IP_TRIES), (_pin_state("u:" + u["id"], now), PIN_USER_TRIES)]
+        wait = max(st["until"] for st, _ in sts) - now
+        if wait > 0 and u.get("pin_hash"):     # Profile ohne PIN bleiben erreichbar
+            mins = max(1, int(wait // 60 + 0.999))
+            raise OptionError(f"Zu viele falsche Versuche – bitte {mins} Minuten warten.")
         ok = not u.get("pin_hash") or hmac.compare_digest(_hash_pin(pin or "", u.get("pin_salt", "")), u["pin_hash"])
         if not ok:
-            fails.append(now)
-            _pin_fails[u["id"]] = fails
-        else:
-            _pin_fails.pop(u["id"], None)
+            for st, limit in sts:
+                st["n"] += 1
+                st["last"] = now
+                if st["n"] >= limit:
+                    st["until"] = now + min(PIN_LOCK_BASE * 2 ** st["level"], PIN_LOCK_MAX)
+                    st["level"] += 1
+                    st["n"] = 0
+        elif u.get("pin_hash"):
+            sts[1][0]["n"] = 0          # Profil-Zähler zurück; Geräte-Zähler nicht (sonst: eigene PIN eingeben,
+            #                             dann wieder 7 Versuche auf das Admin-Profil – endlos)
+        if len(_pin_fails) > 5000:        # Speicher begrenzen
+            for k in [k for k, st in _pin_fails.items() if st["until"] < now and now - st["last"] > 3600]:
+                _pin_fails.pop(k, None)
     if not ok:
         time.sleep(0.8)
     return ok
@@ -1382,12 +1721,13 @@ def set_pin(u: dict, pin: str):
 # Aufräumen (umschaltbar: nach PC-Download, nach X Tagen, ab Speicherlimit)
 # --------------------------------------------------------------------------- #
 
-def janitor_once(only_user: str | None = None) -> int:
-    """Jede Person hat eigene Regeln – sie gelten nur für ihre eigenen Dateien."""
+def janitor_once(only_user: str | None = None, prune: bool = True) -> int:
+    """Jede Person hat eigene Regeln – sie gelten nur für ihre eigenen Dateien.
+    prune=False: ohne Existenzprüfung aller Dateien (der Hintergrund-Aufräumer macht die nur stündlich)."""
     now = time.time()
     removed = 0
     with LIB_LOCK:
-        if not lib_prune_missing():
+        if prune and not lib_prune_missing():
             return 0           # Speicher nicht erreichbar – Regeln später anwenden
         for uid, u in list(USERS.items()):
             if only_user and uid != only_user:
@@ -1403,20 +1743,20 @@ def janitor_once(only_user: str | None = None) -> int:
                     removed += lib_delete(e["id"], f"älter als {c['max_age_days']} Tage")
             if c.get("max_size_gb"):
                 limit = float(c["max_size_gb"]) * 1024 ** 3
-                alive = [e for e in LIB.values() if e.get("owner") == uid and Path(e["path"]).exists()]
+                alive = [e for e in LIB.values() if e.get("owner") == uid]
                 alive.sort(key=lambda e: e["added"])
-                total = sum(_size(e["path"]) for e in alive)
+                total = sum(_esize(e) for e in alive)
                 for e in alive:
                     if total <= limit:
                         break
                     if e.get("pinned"):
                         continue
-                    size = _size(e["path"])
+                    size = _esize(e)
                     if lib_delete(e["id"], f"Speicherlimit {c['max_size_gb']} GB"):
                         total -= size
                         removed += 1
     if removed:
-        lib_save()
+        lib_save_soon()
     return removed
 
 
@@ -1425,8 +1765,8 @@ def _janitor():
         JANITOR_WAKE.wait(timeout=300)
         JANITOR_WAKE.clear()
         time.sleep(2)
-        try:
-            janitor_once()
+        try:   # alle Dateien auf Existenz prüfen ist auf NAS/USB teuer – nur stündlich
+            janitor_once(prune=time.time() - _last_prune >= 3600)
         except Exception as e:  # darf den Server nie stoppen
             print(f"[!] Aufräumen fehlgeschlagen: {e}")
 
@@ -1443,7 +1783,7 @@ def mark_pc_downloaded(path: str, by_user: str | None = None):
         if (owner.get("cleanup") or {}).get("after_pc_download") and not e.get("pinned"):
             e["delete_at"] = time.time() + 60   # kurze Gnadenfrist, falls der Download wiederholt wird
             threading.Timer(65, JANITOR_WAKE.set).start()
-    lib_save()
+    lib_save_soon()
 
 
 # Handys öffnen die Datei mit der App, die zum Typ passt – „application/octet-stream“ bot Wallet & Co. an
@@ -1513,18 +1853,23 @@ def run_ffmpeg(job: "Job", args: list[str], duration: float, stage: str, lo: flo
     cmd = [ffmpeg_bin("ffmpeg"), "-hide_banner", "-nostats", "-loglevel", "error", "-progress", "pipe:1", "-y"] + args
     job.log.append("$ " + " ".join(cmd))
     job.stage, job.percent = stage, lo
-    kw = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | 0x08000000} if IS_WINDOWS else {"start_new_session": True}
-    job.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, **kw)
-    for raw in job.proc.stdout:
-        line = raw.decode("utf-8", "replace").strip()
-        if line.startswith(("out_time_us=", "out_time_ms=")) and duration:
-            try:
-                t = int(line.split("=", 1)[1]) / 1e6
-                job.percent = round(lo + (hi - lo) * min(t / duration, 1), 1)
-            except ValueError:
-                pass
-    err_out = job.proc.stderr.read().decode("utf-8", "replace").strip()
-    rc = job.proc.wait()
+    # stderr in eine Datei statt Pipe: schreibt ffmpeg viel Fehlertext, während wir nur stdout lesen, liefe die
+    # stderr-Pipe voll und beide Seiten warteten ewig aufeinander
+    tmp = download_root() / ".tmp" / job.id
+    tmp.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryFile(dir=tmp) as errf:
+        start_proc(job, cmd, stdout=subprocess.PIPE, stderr=errf)
+        for raw in job.proc.stdout:
+            line = raw.decode("utf-8", "replace").strip()
+            if line.startswith(("out_time_us=", "out_time_ms=")) and duration:
+                try:
+                    t = int(line.split("=", 1)[1]) / 1e6
+                    job.percent = round(lo + (hi - lo) * min(t / duration, 1), 1)
+                except ValueError:
+                    pass
+        rc = job.proc.wait()
+        errf.seek(0)
+        err_out = errf.read()[-20000:].decode("utf-8", "replace").strip()
     job.proc = None
     if err_out:
         job.log.extend(err_out.splitlines()[-10:])
@@ -1556,7 +1901,11 @@ def convert_one(job: "Job", src: Path, kind: str, conv: dict, out_dir: Path) -> 
         out = unique_path(out_dir / (src.stem + ".gif"))
         vf = (f"fps={fps},scale={width}:-2:flags=lanczos,split[a][b];"
               f"[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=5")
-        run_ffmpeg(job, ["-i", f, "-vf", vf, "-loop", "0", str(out)], dur, "GIF erstellen", 0, 100)
+        try:
+            run_ffmpeg(job, ["-i", f, "-vf", vf, "-loop", "0", str(out)], dur, "GIF erstellen", 0, 100)
+        except OptionError:
+            out.unlink(missing_ok=True)      # halbe Datei nicht im Zielordner liegen lassen
+            raise
         return out
     target = float(conv.get("targetMB", 16))
     if not dur:
@@ -1580,6 +1929,9 @@ def convert_one(job: "Job", src: Path, kind: str, conv: dict, out_dir: Path) -> 
         audio = ["-c:a", "aac", "-b:a", f"{audio_k}k"] if audio_k else ["-an"]
         run_ffmpeg(job, common + ["-pass", "2"] + audio + ["-movflags", "+faststart", str(out)],
                    dur, "Verkleinern (2/2)", 45, 100)
+    except OptionError:
+        out.unlink(missing_ok=True)
+        raise
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return out
@@ -1588,12 +1940,16 @@ def convert_one(job: "Job", src: Path, kind: str, conv: dict, out_dir: Path) -> 
 def convert_job_files(job: "Job", kind: str, final_dir: Path):
     conv = job.options.get("convert") or {}
     new_files = []
-    for f in job.files:
+    for i, f in enumerate(job.files):
         src = Path(f)
         if not src.exists() or kind_of(f) != "video":
             new_files.append(f)
             continue
-        out = convert_one(job, src, kind, conv, final_dir)
+        try:
+            out = convert_one(job, src, kind, conv, final_dir)
+        except OptionError:
+            job.files = new_files + job.files[i:]     # Abbrechen: Fertiges + Unbearbeitetes bleibt bekannt
+            raise
         job.file_meta[str(out)] = job.file_meta.get(f) or dict(job.meta)
         new_files.append(str(out))
         if conv.get("keepOriginal"):
@@ -1771,8 +2127,12 @@ def also_audio(job: "Job"):
         if not info["audio"]:
             continue
         out = unique_path(src.with_suffix("." + fmt))
-        run_ffmpeg(job, ["-i", f, "-map", "0:a:0", "-vn", "-sn"] + audio_enc(fmt, job.options.get("audioBitrate")) + [str(out)],
-                   info["duration"], "Audio-Datei erstellen", 0, 100)
+        try:
+            run_ffmpeg(job, ["-i", f, "-map", "0:a:0", "-vn", "-sn"] + audio_enc(fmt, job.options.get("audioBitrate")) +
+                       [str(out)], info["duration"], "Audio-Datei erstellen", 0, 100)
+        except OptionError:
+            out.unlink(missing_ok=True)
+            raise
         job.files.append(str(out))
         job.file_meta[str(out)] = job.file_meta.get(f) or dict(job.meta)
 
@@ -1807,18 +2167,17 @@ BASE_OPTIONS = {"embedThumbnail": True, "embedMetadata": True, "embedChapters": 
 INFO_CACHE: dict[str, tuple[float, dict]] = {}
 
 
-def fetch_info(url: str, playlist: bool) -> dict:
-    key = f"{playlist}|{url}"
+def fetch_info(url: str, playlist: bool, user: dict | None = None) -> dict:
+    check_private_url(url, user)
+    key = f"{playlist}|{cookies_for(user)}|{url}"     # mit/ohne Cookies können unterschiedliche Infos liefern
     hit = INFO_CACHE.get(key)
     if hit and time.time() - hit[0] < 600:
         return hit[1]
     cmd = ytdlp_base() + ["-J", "--no-warnings", "--ignore-config", "--flat-playlist",
                           "--yes-playlist" if playlist else "--no-playlist"]
-    kw = {"creationflags": 0x08000000} if IS_WINDOWS else {}
     with tempfile.TemporaryDirectory() as tmp:
-        cmd += cookie_args(Path(tmp)) + list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
-        r = subprocess.run(cmd, capture_output=True, timeout=90,
-                           env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **kw)
+        cmd += cookie_args(Path(tmp), url, user) + list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
+        r = run_tool(cmd, timeout=90, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     if r.returncode != 0:
         err = r.stderr.decode("utf-8", "replace").strip().splitlines()
         msg = next((l[6:].strip() for l in reversed(err) if l.startswith("ERROR:")), err[-1] if err else "Unbekannter Fehler")
@@ -1888,28 +2247,98 @@ app = Flask(__name__)
 app.json.ensure_ascii = False
 
 
+PUBLIC_PATHS = ("/", "/favicon.ico", "/library", "/manifest.webmanifest", "/api/profiles", "/api/login")
+NO_CORS = ("/api/profiles", "/api/login")     # liefern Tokens (Profile ohne PIN) – nur für die Mediathek selbst
+LEARNED_HOSTS: set[str] = set()                # Hostnamen, unter denen schon jemand mit gültigem Token kam
+
+
+def _hostname(h: str) -> str:
+    """'Name:Port' / '[::1]:8765' → kleingeschriebener Name ohne Port."""
+    h = (h or "").strip().lower()
+    if h.startswith("["):
+        return h[1:h.find("]")] if "]" in h else h
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+def host_ok(host: str) -> bool:
+    """Gegen DNS-Rebinding: Eine fremde Webseite (boese.de → zeigt plötzlich auf 192.168.x.x) wäre für den Browser
+    „gleiche Herkunft“. Großzügig erlaubt: IP-Adressen, localhost, Namen ohne Punkt (Rechnername, Docker),
+    .local/.lan/.home.arpa/.internal/.ts.net, Einstellung allowed_hosts und Namen, die schon mit Token benutzt wurden."""
+    import ipaddress
+    h = _hostname(host).rstrip(".")
+    if not h:
+        return True
+    try:
+        ipaddress.ip_address(h)
+        return True
+    except ValueError:
+        pass
+    if "." not in h or h == "localhost" or h.endswith((".localhost", ".local", ".lan", ".home", ".home.arpa",
+                                                       ".internal", ".ts.net", ".invalid")):
+        return True
+    extra = {str(x).lower().strip().rstrip(".") for x in SETTINGS.get("allowed_hosts") or [] if isinstance(x, str)}
+    return h in extra or h in LEARNED_HOSTS
+
+
+def _learn_host(host: str):
+    """Die „Unterwegs-Adresse“ (DynDNS) lernen: Erweiterung/App senden dort ihren Token mit."""
+    h = _hostname(host).rstrip(".")
+    if h and not host_ok(h) and len(LEARNED_HOSTS) < 50:
+        LEARNED_HOSTS.add(h)
+        with SETTINGS_LOCK:
+            hosts = [x for x in SETTINGS.get("allowed_hosts") or [] if isinstance(x, str)]
+            if h not in hosts:
+                SETTINGS["allowed_hosts"] = (hosts + [h])[-50:]
+                try:
+                    save_settings(SETTINGS)
+                except OSError:
+                    pass
+
+
+def origin_ok(origin: str) -> bool:
+    """Wer darf Antworten per CORS lesen: Erweiterung, Android-Einrichtungsseite, die eigene Adresse und Adressen
+    im Heimnetz (Mediathek unter der LAN-Adresse fragt bei Ausfall die Unterwegs-Adresse) – keine fremden Webseiten."""
+    from urllib.parse import urlparse
+    if origin.startswith(("chrome-extension://", "moz-extension://", "safari-web-extension://")):
+        return True
+    try:
+        u = urlparse(origin)
+    except ValueError:
+        return False
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return False
+    if u.netloc.lower() == (request.host or "").lower():
+        return True
+    return host_ok(u.hostname)
+
+
 @app.after_request
 def cors(resp: Response):
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Token"
-    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
-    resp.headers["Access-Control-Allow-Private-Network"] = "true"
+    origin = request.headers.get("Origin") or ""
+    if origin and request.path not in NO_CORS and origin_ok(origin):
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Token"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
+        resp.headers["Access-Control-Allow-Private-Network"] = "true"
+    resp.headers["Vary"] = "Origin"
     return resp
-
-
-PUBLIC_PATHS = ("/", "/favicon.ico", "/library", "/manifest.webmanifest", "/api/profiles", "/api/login")
 
 
 @app.before_request
 def auth():
     if request.method == "OPTIONS":
         return Response(status=204)
+    if request.path in NO_CORS and not host_ok(request.host):
+        return jsonify(error="Unbekannte Adresse – Kinbox einmal mit Token (Erweiterung/App) über diese Adresse "
+                             "öffnen oder sie in settings.json unter allowed_hosts eintragen"), 403
     if request.path in PUBLIC_PATHS or request.path.startswith("/static/"):
         return None
     u = user_by_token(request.headers.get("X-Token") or request.args.get("token") or "")
     if not u:
         return jsonify(error="Falscher oder fehlender Token"), 401
     g.user = u
+    if not host_ok(request.host):
+        _learn_host(request.host)
 
 
 def me() -> dict:
@@ -1972,18 +2401,44 @@ def has_ffmpeg() -> bool:
 
 
 _version_cache = {}
+_version_lock = threading.Lock()
 
 
-def ytdlp_version() -> str:
-    if "v" not in _version_cache or time.time() - _version_cache.get("t", 0) > 3600:
+def _read_ytdlp_version(block: bool = False):
+    if not _version_lock.acquire(blocking=block):
+        return                      # läuft schon
+    try:
         try:
-            r = subprocess.run(ytdlp_base() + ["--version"], capture_output=True, timeout=30,
-                               **({"creationflags": 0x08000000} if IS_WINDOWS else {}))
-            _version_cache["v"] = r.stdout.decode().strip() or "?"
+            r = run_tool(ytdlp_base() + ["--version"], timeout=30)
+            v = r.stdout.decode("utf-8", "replace").strip() or "?"
         except Exception:
-            _version_cache["v"] = "nicht gefunden"
-        _version_cache["t"] = time.time()
-    return _version_cache["v"]
+            v = "nicht gefunden"
+        _version_cache.update(v=v, t=time.time())
+    finally:
+        _version_lock.release()
+
+
+def ytdlp_version(wait: bool = False) -> str:
+    """/api/ping wird oft abgefragt – yt-dlp (bei der exe: entpacken!) nicht dabei starten, sondern im Hintergrund
+    höchstens stündlich neu lesen. wait=True: jetzt lesen (Start, nach Update)."""
+    if wait:
+        _read_ytdlp_version(block=True)
+    elif "v" not in _version_cache or time.time() - _version_cache.get("t", 0) > 3600:
+        threading.Thread(target=_read_ytdlp_version, daemon=True).start()
+    return _version_cache.get("v", "…")
+
+
+_tool_cache: dict[str, tuple] = {}
+
+
+def cached(name: str, fn, ttl: float = 300):
+    """Ergebnis von fn() einige Minuten merken (PATH-Suche bei jedem /api/ping ist auf Windows langsam)."""
+    hit = _tool_cache.get(name)
+    if hit and time.time() - hit[0] < ttl:
+        return hit[1]
+    v = fn()
+    _tool_cache[name] = (time.time(), v)
+    return v
 
 
 def js_runtime():
@@ -2006,10 +2461,11 @@ def _my_log(limit: int) -> list:
 def ping():
     u = me()
     return jsonify(ok=True, version=APP_VERSION, ytdlp=ytdlp_version(),
-                   ffmpeg=has_ffmpeg(), js_runtime=js_runtime(),
+                   ffmpeg=cached("ffmpeg", has_ffmpeg), js_runtime=cached("js", js_runtime),
                    download_dir=str(user_root(u)) if not is_admin() else str(download_root()),
                    max_parallel=SETTINGS["max_parallel"],
                    cookies=bool(SETTINGS.get("cookies_file")),
+                   cookies_all=SETTINGS.get("cookies_all_profiles", True) is not False,
                    user=user_public(u, private=True), is_admin=is_admin(),
                    cleanup=u.get("cleanup"), night=SETTINGS.get("night"), night_active=in_night_window(),
                    library=lib_stats(u["id"]), usage=user_usage(u["id"]), quota_gb=u.get("quota_gb", 0),
@@ -2032,7 +2488,7 @@ def login():
     if not u:
         return err("Profil nicht gefunden", 404)
     try:
-        if not check_pin(u, str(body.get("pin", ""))):
+        if not check_pin(u, str(body.get("pin", "")), request.remote_addr or ""):
             return err("Falsche PIN", 403)
     except OptionError as e:
         return err(str(e), 429)
@@ -2093,14 +2549,23 @@ def _apply_profile(u: dict, body: dict, admin_fields: bool):
 @app.get("/api/users")
 def list_users():
     need_admin()
+    per: dict[str, list] = {}               # ein Durchlauf über die Mediathek statt einer pro Profil
+    with LIB_LOCK:
+        for e in LIB.values():
+            c = per.setdefault(e.get("owner") or "", [0, 0])
+            c[0] += 1
+            c[1] += _esize(e)
+    active: dict[str, int] = {}
+    for j in list(JOBS.values()):
+        if j.status in ACTIVE:
+            active[j.owner] = active.get(j.owner, 0) + 1
     with USERS_LOCK:
         out = []
         for u in sorted(USERS.values(), key=lambda u: (u["role"] != "admin", u["created"])):
             d = user_public(u, private=True)
             d["token"] = u["token"]
-            d["usage"] = user_usage(u["id"])
-            d["files"] = lib_stats(u["id"])["count"]
-            d["active_jobs"] = sum(1 for j in list(JOBS.values()) if j.owner == u["id"] and j.status in ("queued", "running", "scheduled"))
+            d["files"], d["usage"] = per.get(u["id"], [0, 0])
+            d["active_jobs"] = active.get(u["id"], 0)
             out.append(d)
     return jsonify(out)
 
@@ -2167,11 +2632,24 @@ def delete_user(uid):
         return err("Du kannst dein eigenes Profil nicht löschen")
     if u["role"] == "admin" and sum(1 for x in USERS.values() if x["role"] == "admin") <= 1:
         return err("Es muss mindestens einen Admin geben")
+    running = []
     with QUEUE_COND:
-        for j in JOBS.values():
-            if j.owner == uid and j.status in ("queued", "scheduled", "running"):
+        for j in list(JOBS.values()):
+            if j.owner != uid:
+                continue
+            if j.status in ("queued", "scheduled"):
                 j.status, j.stage = "cancelled", "Abgebrochen"
-                kill_job(j)
+                if j.id in QUEUE:
+                    QUEUE.remove(j.id)
+            elif j.status == "running":
+                running.append(j)
+    for j in running:
+        kill_job(j)
+    # Laufende Aufträge erst zu Ende kommen lassen (übernehmen fertige Teile noch in die Mediathek) – sonst
+    # landen danach Dateien mit gelöschtem Besitzer in der Mediathek bzw. bleiben beim Löschen übrig
+    end = time.time() + 15
+    while any(j.status == "running" for j in running) and time.time() < end:
+        time.sleep(0.2)
     removed = 0
     if request.args.get("files") == "1":
         with LIB_LOCK:
@@ -2182,7 +2660,7 @@ def delete_user(uid):
             for e in LIB.values():
                 if e.get("owner") == uid:
                     e["owner"] = me()["id"]
-        lib_save()
+        lib_save_soon()
     with JOBS_LOCK:
         for jid in [j.id for j in JOBS.values() if j.owner == uid]:
             JOBS.pop(jid, None)
@@ -2201,21 +2679,25 @@ def info():
     url = str(body.get("url") or "").strip()
     if not re.match(r"^https?://", url):
         return err("Ungültige URL")
+    try:
+        check_private_url(url, me())
+    except OptionError as e:
+        return err(str(e), 403)
     profile = avatar_url(tiktok_full(url))
     try:
         if sid := sound_id(url):
             snd = sound_lookup(sid)
-            data = dict(fetch_info(snd["video"], False))
+            data = dict(fetch_info(snd["video"], False, user=me()))
             data.update(sound=True, title=data.get("track") or data.get("title"), uploader=snd["artist"] or data.get("uploader"),
                         thumbnail=snd["cover"] or data.get("thumbnail"), webpage_url=url, chapters=[], subtitles=[],
                         auto_subtitles=[], qualities=[])
             return jsonify(data)
-        data = dict(fetch_info(url, bool(body.get("playlist"))))
+        data = dict(fetch_info(url, bool(body.get("playlist")), user=me()))
         data["profile"] = bool(profile)
         if data.get("type") == "video" and data.get("id"):
-            uid = me()["id"]
+            uid, roots = me()["id"], {}
             with LIB_LOCK:
-                data["already"] = [lib_public(e) for e in sorted(LIB.values(), key=lambda e: e["added"], reverse=True)
+                data["already"] = [lib_public(e, roots) for e in sorted(LIB.values(), key=lambda e: e["added"], reverse=True)
                                    if e.get("vid") == data["id"] and (e.get("extractor") or "") == (data.get("extractor") or "")
                                    and Path(e["path"]).exists() and (e.get("owner") == uid or e.get("shared"))]
         return jsonify(data)
@@ -2235,6 +2717,7 @@ def create_job():
     try:
         check_quota(me())
         build_args(opts, download_root())  # vorab prüfen, damit Fehler sofort sichtbar sind
+        check_private_url(opts["url"], me())
     except OptionError as e:
         return err(str(e))
     return jsonify(enqueue(opts).public()), 201
@@ -2264,6 +2747,7 @@ def add_via_get():
     try:
         check_quota(me())
         build_args(opts, download_root())
+        check_private_url(opts["url"], me())
     except OptionError as e:
         return err(str(e))
     job = enqueue(opts)
@@ -2407,7 +2891,8 @@ def library_list():
     scope = request.args.get("scope", "mine")
     uid = me()["id"]
     with LIB_LOCK:
-        items = [e for e in LIB.values() if Path(e["path"]).exists()]
+        alive = [e for e in LIB.values() if os.path.exists(e["path"])]     # einziger Existenz-Durchlauf
+        items = alive
         if scope == "favs" or scope.startswith("coll:"):
             c = _coll(scope[5:]) if scope != "favs" else None
             ids = set(c["items"] if c else me().get("favs") or [])
@@ -2420,13 +2905,14 @@ def library_list():
         else:
             items = [e for e in items if e.get("owner") == uid]
         items.sort(key=lambda e: e["added"], reverse=True)
-        u = me()
-        return jsonify(items=[lib_public(e) for e in items], stats=lib_stats(uid), user=user_public(u, private=True),
-                       is_admin=is_admin(), usage=user_usage(uid), quota_gb=u.get("quota_gb", 0),
+        u, roots = me(), {}
+        mine = lib_stats(uid, alive)
+        return jsonify(items=[lib_public(e, roots) for e in items], stats=mine, user=user_public(u, private=True),
+                       is_admin=is_admin(), usage=mine["size"], quota_gb=u.get("quota_gb", 0),
                        cleanup=u.get("cleanup"), cleanup_log=_my_log(20),
                        pos={i: s for i, s in (u.get("pos") or {}).items() if i in LIB}, favs=[i for i in u.get("favs") or [] if i in LIB],
                        collections=[{**c, "items": [i for i in c["items"] if i in LIB]} for c in u.get("collections") or []],
-                       family_count=sum(1 for e in LIB.values() if e.get("shared") and Path(e["path"]).exists()))
+                       family_count=sum(1 for e in alive if e.get("shared")))
 
 
 @app.get("/api/library/<eid>/stream")
@@ -2461,7 +2947,7 @@ def library_pin(eid):
         e["pinned"] = bool(body.get("pinned", not e.get("pinned")))
         if e["pinned"]:
             e["delete_at"] = None
-    lib_save()
+    lib_save_soon()
     return jsonify(lib_public(e))
 
 
@@ -2471,8 +2957,28 @@ def library_share(eid):
     body = json_body()
     with LIB_LOCK:
         e["shared"] = bool(body.get("shared", not e.get("shared")))
-    lib_save()
+    lib_save_soon()
     return jsonify(lib_public(e))
+
+
+COMPANION_EXT = (".info.json", ".description")
+
+
+def rename_companions(old: Path, new: Path):
+    """Begleitdateien („Titel.de.srt“, „Titel.info.json“, „Titel.description“) mit umbenennen – sonst findet der
+    Player die Untertitel nicht mehr und sie liegen verwaist im Ordner."""
+    try:
+        near = [f for f in old.parent.iterdir() if f.name.startswith(old.stem + ".") and f.is_file()]
+    except OSError:
+        return
+    for f in near:
+        rest = f.name[len(old.stem):]                    # z. B. „.de.srt“
+        if not (f.suffix.lower() in SUB_EXT or rest.lower() in COMPANION_EXT):
+            continue
+        try:
+            os.replace(f, unique_path(new.parent / (new.stem + rest)))
+        except OSError:
+            pass
 
 
 @app.post("/api/library/<eid>/rename")
@@ -2493,9 +2999,12 @@ def library_rename(eid):
                     os.replace(old, new)
                 except OSError:
                     return err("Datei konnte nicht umbenannt werden (wird sie gerade benutzt?)", 409)
+                _PATH_INDEX.pop(_pkey(str(old)), None)
+                _PATH_INDEX[_pkey(str(new))] = e["id"]
                 e["path"], e["name"] = str(new), new.name
+                rename_companions(old, new)
         e["title"] = title
-    lib_save()
+    lib_save_soon()
     return jsonify(lib_public(e))
 
 
@@ -2505,7 +3014,6 @@ VTT_CACHE: dict[tuple, bytes] = {}
 SUB_EXT = (".vtt", ".srt", ".ass")
 TEXT_SUBS = ("subrip", "ass", "ssa", "mov_text", "webvtt", "text")     # Bild-Untertitel (PGS/DVD) kann der Browser nicht
 POS_MAX = 300
-NOWIN = {"creationflags": 0x08000000} if IS_WINDOWS else {}
 
 
 def media_extras(e: dict) -> dict:
@@ -2608,7 +3116,7 @@ def library_pos():
         for k in list(pos)[:max(0, len(pos) - POS_MAX)]:
             del pos[k]
         u["pos"] = pos
-        users_save()
+    users_save()
     return jsonify(ok=True)
 
 
@@ -2639,7 +3147,7 @@ def library_favs():
         favs = [i for i in u.get("favs") or [] if i not in rm]
         favs += [i for i in add if i not in favs]
         u["favs"] = favs
-        users_save()
+    users_save()
     return jsonify(favs=favs)
 
 
@@ -2654,7 +3162,7 @@ def collection_new():
             return err("Zu viele Sammlungen")
         c = {"id": uuid.uuid4().hex[:8], "name": name, "items": []}
         cols.append(c)
-        users_save()
+    users_save()
     return jsonify(c), 201
 
 
@@ -2672,7 +3180,7 @@ def collection_update(cid):
         rm = {x for x in body.get("remove") or [] if isinstance(x, str)}
         c["items"] = [i for i in c["items"] if i not in rm]
         c["items"] += [i for i in add if i not in c["items"]]
-        users_save()
+    users_save()
     return jsonify(c)
 
 
@@ -2682,7 +3190,7 @@ def collection_delete(cid):
     with USERS_LOCK:
         u = me()
         u["collections"] = [c for c in u.get("collections") or [] if c["id"] != cid]
-        users_save()
+    users_save()
     return jsonify(ok=True)
 
 
@@ -2739,9 +3247,13 @@ def update_settings():
         with USERS_LOCK:
             u["cleanup"] = c
         users_save()
-    server_keys = {"max_parallel", "download_dir", "night"} & set(body)
+    server_keys = {"max_parallel", "download_dir", "night", "cookies_all_profiles"} & set(body)
     if server_keys:
         need_admin()
+        if "download_dir" in body and body["download_dir"] and not isinstance(body["download_dir"], str):
+            return err("Ungültiger Wert für download_dir")
+        if "night" in body and not isinstance(body["night"], dict):
+            return err("Ungültiger Wert für night")
         with SETTINGS_LOCK:
             if "max_parallel" in body:
                 try:
@@ -2762,8 +3274,14 @@ def update_settings():
                     if not re.match(r"^([01]?\d|2[0-3]):[0-5]\d$", v):
                         return err("Uhrzeit bitte als HH:MM angeben")
                     n[k] = v
+                if n["start"] == n["end"]:           # leeres Fenster: „nachts“-Aufträge liefen nie
+                    return err("Start und Ende des Nachtfensters dürfen nicht gleich sein")
                 SETTINGS["night"] = n
+            if "cookies_all_profiles" in body:
+                SETTINGS["cookies_all_profiles"] = bool(body["cookies_all_profiles"])
+                INFO_CACHE.clear()
             save_settings(SETTINGS)
+        _tool_cache.clear()
     JANITOR_WAKE.set()
     with QUEUE_COND:
         QUEUE_COND.notify_all()
@@ -2779,17 +3297,20 @@ def update_ytdlp():
     if not _update_lock.acquire(blocking=False):
         return err("Update läuft bereits")
     try:
-        kw = {"creationflags": 0x08000000} if IS_WINDOWS else {}
         if SETTINGS.get("ytdlp_command") or FROZEN:
             cmd = ytdlp_base() + ["-U"]
         else:
             cmd = [sys.executable, "-m", "pip", "install", "-U", "yt-dlp[default]", "gallery-dl"]
-        r = subprocess.run(cmd, capture_output=True, timeout=300, **kw)
-        if FROZEN and (TOOLS_DIR / "gallery-dl.exe").exists():   # Foto-Beiträge
-            subprocess.run(gallerydl_base() + ["-U"], capture_output=True, timeout=300, **kw)
-        _version_cache.clear()
+        try:
+            r = run_tool(cmd, timeout=300)
+            if FROZEN and (TOOLS_DIR / "gallery-dl.exe").exists():   # Foto-Beiträge
+                run_tool(gallerydl_base() + ["-U"], timeout=300)
+        except subprocess.TimeoutExpired:
+            return err("Update hat zu lange gedauert", 504)
+        except OSError as e:
+            return err(f"Update fehlgeschlagen: {e}", 502)
         out = (r.stdout + r.stderr).decode("utf-8", "replace").strip().splitlines()[-6:]
-        return jsonify(ok=r.returncode == 0, ytdlp=ytdlp_version(), output="\n".join(out))
+        return jsonify(ok=r.returncode == 0, ytdlp=ytdlp_version(wait=True), output="\n".join(out))
     finally:
         _update_lock.release()
 
@@ -2922,6 +3443,7 @@ def _fetch_update(rel: dict) -> None:
 
 def _restart() -> None:
     time.sleep(1)  # Antwort an den Browser noch rausschicken
+    flush_all()    # os._exit überspringt atexit – entprellte Speichervorgänge jetzt schreiben
     if DOCKER:  # Container startet per „restart: unless-stopped“ neu, neue server.py bleibt im Container
         os._exit(0)
     env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1", "KB_UPDATED": "1"}
@@ -2975,20 +3497,36 @@ YT_CHANNEL_RE = re.compile(r"^(https?://(?:www\.|m\.)?youtube\.com/(?:@|channel/
 
 
 def subs_load():
-    if SUBS_FILE.exists():
+    if not SUBS_FILE.exists():
+        return
+    try:
+        data = json.loads(SUBS_FILE.read_text(encoding="utf-8-sig"))
+        if not isinstance(data, list):
+            raise ValueError("keine Liste")
+    except Exception as e:   # Sicherung behalten – der nächste Speichervorgang würde sie sonst überschreiben
+        print(f"[!] subs.json ignoriert (Kopie: subs.json.kaputt): {e}")
         try:
-            for s in json.loads(SUBS_FILE.read_text(encoding="utf-8")):
-                s["checking"] = False
-                SUBS[s["id"]] = s
+            shutil.copyfile(SUBS_FILE, SUBS_FILE.with_name("subs.json.kaputt"))
+        except OSError:
+            pass
+        return
+    for s in data:
+        try:   # ein kaputtes Abo soll nicht alle anderen mitnehmen
+            if not isinstance(s, dict) or not isinstance(s.get("id"), str) or not isinstance(s.get("url"), str) \
+                    or s.get("preset") not in SERVER_PRESETS:
+                raise ValueError(f"ungültiges Abo {str(s)[:60]}")
+            s["interval_h"], s["max_items"] = float(s.get("interval_h") or 6), int(s.get("max_items") or 5)
+            s.setdefault("owner", "")
+            s.setdefault("created", 0)
+            s["checking"] = False
+            SUBS[s["id"]] = s
         except Exception as e:
-            print(f"[!] subs.json ignoriert: {e}")
+            print(f"[!] Abo in subs.json ignoriert: {e}")
 
 
 def subs_save():
     with SUBS_LOCK:
-        tmp = SUBS_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(list(SUBS.values()), ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, SUBS_FILE)
+        write_atomic(SUBS_FILE, json.dumps(list(SUBS.values()), ensure_ascii=False))
 
 
 def sub_public(s: dict) -> dict:
@@ -3013,17 +3551,15 @@ def sub_opts(s: dict, url: str, title: str = "") -> dict:
     return opts
 
 
-def sub_scan(url: str) -> list[dict]:
+def sub_scan(url: str, user: dict | None = None) -> list[dict]:
     """Neueste Einträge (ohne Download): [{id, url, title, …}] in Playlist-Reihenfolge."""
     cmd = ytdlp_base() + ["--flat-playlist", "--yes-playlist", "--ignore-config", "--no-warnings",
                           "--print", "%(.{id,url,webpage_url,title,playlist_title,playlist_uploader,live_status})j"]
     if "list=" not in url:
         cmd += ["--playlist-end", str(SUB_SCAN)]
-    kw = {"creationflags": 0x08000000} if IS_WINDOWS else {}
     with tempfile.TemporaryDirectory() as tmp:
-        cmd += cookie_args(Path(tmp)) + list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
-        r = subprocess.run(cmd, capture_output=True, timeout=300, stdin=subprocess.DEVNULL,
-                           env={**os.environ, "PYTHONIOENCODING": "utf-8"}, **kw)
+        cmd += cookie_args(Path(tmp), url, user) + list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
+        r = run_tool(cmd, timeout=300, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     out = []
     for line in r.stdout.decode("utf-8", "replace").splitlines():
         try:
@@ -3056,7 +3592,7 @@ def sub_check(sid: str):
         s["checking"] = True
     new, error, seen = 0, "", None
     try:
-        entries = [e for e in sub_scan(s["url"]) if e.get("live_status") not in ("is_live", "is_upcoming")]
+        entries = [e for e in sub_scan(s["url"], owner) if e.get("live_status") not in ("is_live", "is_upcoming")]
         with SUBS_LOCK:
             first = s.get("seen") is None     # noch nie geprüft
             seen = list(s.get("seen") or [])
@@ -3097,12 +3633,15 @@ def sub_check_soon(sid: str):
 def _subs_loop():
     while True:
         time.sleep(60)
-        now = time.time()
-        with SUBS_LOCK:
-            due = [s["id"] for s in SUBS.values()
-                   if not s.get("checking") and now - (s.get("last_check") or 0) >= float(s["interval_h"]) * 3600]
-        for sid in due:                   # nacheinander – schont YouTube & Co.
-            sub_check(sid)
+        try:   # ein Fehler (kaputtes Abo, Platte voll) darf die Abo-Prüfung nicht für immer beenden
+            now = time.time()
+            with SUBS_LOCK:
+                due = [s["id"] for s in SUBS.values()
+                       if not s.get("checking") and now - (s.get("last_check") or 0) >= float(s["interval_h"]) * 3600]
+            for sid in due:                   # nacheinander – schont YouTube & Co.
+                sub_check(sid)
+        except Exception as e:
+            print(f"[!] Abo-Prüfung fehlgeschlagen: {e}")
 
 
 def _sub(sid: str) -> dict:
@@ -3122,7 +3661,7 @@ def subs_list():
 
 @app.post("/api/subs")
 def subs_new():
-    body = request.get_json(silent=True) or {}
+    body = json_body()
     url = sub_url(str(body.get("url") or ""))
     preset = str(body.get("preset") or "best")
     if preset not in SERVER_PRESETS:
@@ -3141,6 +3680,7 @@ def subs_new():
          "last_check": 0, "last_new": 0, "error": "", "checking": False, "seen": None}
     try:
         build_args(sub_opts(s, url), download_root())   # gleiche Prüfung wie jeder Auftrag (URL, Vorlage)
+        check_private_url(url, me())
     except OptionError as e:
         return err(str(e))
     with SUBS_LOCK:
@@ -3190,7 +3730,30 @@ def migrate_owners():
     save_jobs_soon()
 
 
+def already_running(host: str, port: int) -> bool:
+    """Läuft Kinbox schon auf diesem Port? (Windows: waitress kann denselben Port doppelt binden – dann
+    teilten sich zwei Server Anfragen und arbeiteten dieselbe Warteschlange doppelt ab.)"""
+    import socket
+    target = "127.0.0.1" if host in ("", "0.0.0.0", "::", "*") else host
+    try:
+        with socket.create_connection((target, port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
 def main():
+    host, port = SETTINGS["host"], int(SETTINGS["port"])
+    wait_for_old_server(port)
+    if already_running(host, port):
+        print(f" Kinbox läuft bereits (Port {port}) – dieser Start wird beendet.")
+        if FROZEN:
+            import webbrowser
+            users_load()
+            webbrowser.open(f"http://127.0.0.1:{port}/library?token={admin_user()['token']}")
+        return
+    import atexit
+    atexit.register(flush_all)       # Strg+C / normales Ende: entprellte Änderungen nicht verlieren
     users_load()
     lib_load()
     load_jobs()
@@ -3198,13 +3761,11 @@ def main():
     subs_load()
     threading.Thread(target=_subs_loop, daemon=True).start()
     threading.Thread(target=_janitor, daemon=True).start()
-    threading.Thread(target=lambda: [thumb_file(e) for e in list(LIB.values())], daemon=True).start()
+    threading.Thread(target=lambda: [thumbs_migrate()] + [thumb_file(e) for e in list(LIB.values())], daemon=True).start()
     JANITOR_WAKE.set()
     for _ in range(8):
         threading.Thread(target=_worker, daemon=True).start()
     threading.Thread(target=_saver, daemon=True).start()
-    host, port = SETTINGS["host"], int(SETTINGS["port"])
-    wait_for_old_server(port)
     # exe startet immer mit Windows; alte PowerShell-Verknüpfung (≤3.5.0, evtl. von Defender entfernt) → Registry
     if IS_WINDOWS and (FROZEN or (Path(os.environ.get("APPDATA", "")) / STARTUP_LNK).exists()):
         try:
@@ -3218,7 +3779,7 @@ def main():
     print(f" Admin-Token: {admin_user()['token']}")
     print(f" Profile : {', '.join(u['avatar'] + ' ' + u['name'] for u in USERS.values())}")
     print(f" Ordner  : {download_root()}")
-    print(f" yt-dlp  : {ytdlp_version()}")
+    print(f" yt-dlp  : {ytdlp_version(wait=True)}")
     if not has_ffmpeg():
         print(" [!] ffmpeg nicht gefunden – Zusammenführen, MP3 und Zuschneiden gehen dann nicht.")
     if not js_runtime():

@@ -14,6 +14,7 @@ import server  # noqa: E402
 with tempfile.TemporaryDirectory() as d:
     d = Path(d)
     server.THUMB_DIR = d / "thumbs"
+    server.public_http_url = lambda u: u.startswith("http://127.0.0.1")   # Testserver läuft lokal (sonst SSRF-Sperre)
     ff = server.ffmpeg_bin("ffmpeg")
     run = lambda *a: subprocess.run([ff, "-v", "error", "-y", *a], check=True)
     run("-f", "lavfi", "-i", "testsrc=size=640x360:rate=25:duration=3", "-c:v", "libx264", str(d / "v.mp4"))

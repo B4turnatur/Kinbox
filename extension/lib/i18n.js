@@ -189,6 +189,10 @@
     "Kinbox antwortet nicht – bitte Seite neu laden": "Kinbox isn't responding – please reload the page",
     "Erst laufende Downloads abwarten, dann aktualisieren": "Wait for running downloads to finish, then update",
     "Kinbox ist schon aktuell": "Kinbox is already up to date",
+    "Diese YouTube-Liste ist privat und nur für den Admin abrufbar": "This YouTube list is private and only available to the admin",
+    "Start und Ende des Nachtfensters dürfen nicht gleich sein": "Start and end of the night window must not be the same",
+    "Update hat zu lange gedauert": "The update took too long",
+    "Unbekannte Adresse – Kinbox einmal mit Token (Erweiterung/App) über diese Adresse öffnen oder sie in settings.json unter allowed_hosts eintragen": "Unknown address – open Kinbox once with a token (extension/app) via this address or add it to allowed_hosts in settings.json",
     // ---- Android-App
     "Aufs Handy": "To phone", "Willkommen bei Kinbox": "Welcome to Kinbox",
     "Verbinde die App einmal mit deiner Kinbox zu Hause – danach kannst du Videos aus jeder App über „Teilen“ laden.": "Connect the app to your Kinbox at home once – then you can download videos from any app via \"Share\".",
@@ -252,6 +256,7 @@
     ["Für ein GIF ist das Video zu lang ({0} s). Bitte vorher auf max. 90 s zuschneiden.", "The video is too long for a GIF ({0} s). Please trim it to max. 90 s first."],
     ["Zu lang für {0} MB – bei dieser Größe gehen etwa {1} Minuten. Bitte zuschneiden.", "Too long for {0} MB – that size fits about {1} minutes. Please trim."],
     ["Ordner nicht nutzbar: {0}", "Folder not usable: {0}"],
+    ["Zu viele falsche Versuche – bitte {0} Minuten warten.", "Too many wrong attempts – please wait {0} minutes."], ["yt-dlp nicht gefunden: {0}", "yt-dlp not found: {0}"],
     ["Neue Version {0} verfügbar (installiert: {1})", "New version {0} available (installed: {1})"], ["Kinbox {0} ist aktuell", "Kinbox {0} is up to date"],
     ["Kinbox {0} ist installiert", "Kinbox {0} is installed"], ["Update fehlgeschlagen: {0}", "Update failed: {0}"], ["GitHub nicht erreichbar: {0}", "GitHub unreachable: {0}"],
     ["Preset „{0}\" gespeichert", "Preset \"{0}\" saved"], ["Playlist · {0} Videos · {1}", "Playlist · {0} videos · {1}"], ["Playlist · {0} Videos", "Playlist · {0} videos"],

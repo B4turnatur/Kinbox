@@ -70,5 +70,6 @@ with tempfile.TemporaryDirectory() as d:
     assert ok.status == "finished", (ok.status, ok.error)
     new = server.lib_by_path(ok.files[0])
     assert new and new["title"] == "Clip (0:00–0:02)" and new["owner"] == "u1" and src.exists(), new
+    server.lib_save()      # entprelltes Speichern jetzt erledigen, bevor der Testordner gelöscht wird
 
 print("edit ok")

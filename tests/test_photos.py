@@ -58,6 +58,7 @@ with tempfile.TemporaryDirectory() as d:
     job = server.Job({"url": "https://www.instagram.com/p/x/"}, owner="u1")
     server.run_photos(job, d / "ziel", "yt-dlp: login nötig")
     assert job.status == "error" and job.error == "yt-dlp: login nötig", job.error
+    server.lib_save()                  # library.json wird entprellt gespeichert – hier sofort
     json.loads(server.LIBRARY_FILE.read_text(encoding="utf-8"))
 
 print("OK")

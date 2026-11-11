@@ -274,6 +274,7 @@
     ["Aktuell: yt-dlp {0}", "Up to date: yt-dlp {0}"], ["Update fehlgeschlagen: yt-dlp {0}", "Update failed: yt-dlp {0}"],
     ["Weiter bei {0}", "Resuming at {0}"],
     ["alle {0} Std.", "every {0} h"], ["Geprüft {0}", "Checked {0}"], ["{0} neu", "{0} new"],
+    ["Farbe {0}", "Color {0}"], ["Akzentfarbe {0}", "Accent color {0}"],
   ];
   const lang = /^de\b/i.test((navigator.languages && navigator.languages[0]) || navigator.language || "") ? "de" : "en";
   const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

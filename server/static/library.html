@@ -61,6 +61,12 @@ main { max-width: 1280px; margin: 0 auto; padding: 16px; }
 .card { background: var(--bg2); border: 1px solid var(--line); border-radius: min(14px, var(--round)); overflow: hidden; cursor: pointer; transition: transform .12s, border-color .12s; display: flex; flex-direction: column; }
 .card:hover { transform: translateY(-2px); border-color: var(--accent); }
 .thumb { aspect-ratio: 16/9; background: var(--bg3) center/cover no-repeat; position: relative; display: grid; place-items: center; font-size: 34px; color: var(--muted); }
+/* Vorschaubild als <img loading=lazy> statt background-image – lädt erst, wenn die Karte in Sicht kommt */
+.thumb > .ti { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+/* Große Mediatheken: Karten außerhalb des Bildschirms nicht layouten/zeichnen */
+.grid > .card { content-visibility: auto; contain-intrinsic-size: auto 200px; }   /* ≈ echte Kartenhöhe, sonst springt der Scrollbalken */
+@media (max-width: 560px) { .grid > .card { contain-intrinsic-size: auto 155px; } }
+#pipHold { position: fixed; width: 1px; height: 1px; left: 0; bottom: 0; opacity: 0; pointer-events: none; overflow: hidden; }
 .thumb .badge { position: absolute; bottom: 6px; right: 6px; background: rgba(0,0,0,.78); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 5px; }
 .thumb .kind { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.65); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 5px; font-weight: 600; }
 .thumb .pin { position: absolute; top: 6px; right: 6px; font-size: 15px; }
@@ -576,11 +582,21 @@ async function api(path, opts = {}) {
 }
 const fileUrl = (id, what) => `/api/library/${id}/${what}?token=${encodeURIComponent(token)}`;
 // Vorschaubild vom Server (dort gespeichert – die Links von TikTok & Co. laufen nach Stunden ab)
-const thumbOf = (e) => e.kind === "image" || e.kind === "gif" ? fileUrl(e.id, "stream") : e.kind === "video" || (e.kind === "audio" && e.thumbnail) ? fileUrl(e.id, "thumb") : "";
+// Bilder/GIFs: kleines Vorschaubild; ältere Server kennen das nicht (404) → Rückfall auf die Datei selbst (data-fb)
+const thumbOf = (e) => e.kind === "image" || e.kind === "gif" || e.kind === "video" || (e.kind === "audio" && e.thumbnail) ? fileUrl(e.id, "thumb") : "";
+const thumbImg = (e) => {
+  const u = thumbOf(e); if (!u) return "";
+  const fb = e.kind === "image" || e.kind === "gif" ? ` data-fb="${esc(fileUrl(e.id, "stream"))}"` : "";
+  return `<img class="ti" src="${esc(u)}"${fb} loading="lazy" decoding="async" alt="">`;
+};
+document.addEventListener("error", (ev) => {   // error-Ereignisse steigen nicht auf → Capture
+  const im = ev.target; if (!im.matches?.("img.ti")) return;
+  if (im.dataset.fb) { im.src = im.dataset.fb; delete im.dataset.fb; } else im.hidden = true;
+}, true);
 
 let pickUser = null, pin = "";
 async function showPicker() {
-  clearTimeout(pollT);
+  clearTimeout(pollT); pollGen++;   // laufende Abfrage verwerfen
   $("#picker").hidden = false; $("#pickList").hidden = false; $("#pickPin").hidden = true;
   $$("dialog[open]").forEach((d) => d.close());
   setInert(true);   // sonst landen Tastendrücke (PIN!) im Suchfeld dahinter
@@ -629,7 +645,7 @@ async function login(p) {
   token = d.token; store.set("kinbox_token", token);
   $("#picker").hidden = true; setInert(false);
   // Zustand des vorherigen Profils verwerfen
-  sel = null; pin = ""; $("#q").value = ""; $("#site").value = ""; $("#jobs").innerHTML = ""; lastActive = 0;
+  sel = null; pin = ""; $("#q").value = ""; $("#site").value = ""; $("#jobs").innerHTML = ""; lastActive = 0; items = []; albums = new Map();
   $("#ownerFilter").innerHTML = `<option value="">Alle Personen</option>`;
   scope = "mine"; load(); pollJobs();
 }
@@ -637,14 +653,22 @@ async function login(p) {
 // ---- Bibliothek ---------------------------------------------------------
 let items = [], kind = "", data = null, scope = "mine";
 let favs = new Set(), colls = [], sel = null;   // sel: Set der ausgewählten Karten (Mehrfachauswahl), sonst null
+let albums = new Map(), loadGen = 0, loadSoonT;   // albums: Album-ID → Dateien (nach Name sortiert), einmal pro load()
 async function load() {
   if (!token) return showPicker();
-  try { data = await api(`/api/library?scope=${encodeURIComponent(scope)}&owner=${encodeURIComponent($("#ownerFilter").value)}`); }
-  catch (e) { if (token) toast(e.message, true); return; }
+  const gen = ++loadGen;   // schneller Bereichswechsel: nur die Antwort der letzten Anfrage zählt
+  let d;
+  try { d = await api(`/api/library?scope=${encodeURIComponent(scope)}&owner=${encodeURIComponent($("#ownerFilter").value)}`); }
+  catch (e) { if (token && gen === loadGen) toast(e.message, true); return; }
+  if (gen !== loadGen) return;
+  data = d;
   me = data.user; isAdmin = data.is_admin;
   applyLook(me.look);
   loadPos();
   items = data.items;
+  albums = new Map();
+  for (const x of items) if (x.album) (albums.get(x.album) || albums.set(x.album, []).get(x.album)).push(x);
+  for (const a of albums.values()) a.sort((x, y) => x.name.localeCompare(y.name));
   favs = new Set(data.favs || []); colls = data.collections || [];
   if (scope.startsWith("coll:") && !colls.some((c) => "coll:" + c.id === scope)) { scope = "mine"; return load(); }
   // Auswahl auf das beschränken, was hier noch zu sehen ist (sonst wirken Aktionen auf unsichtbare Einträge)
@@ -688,7 +712,7 @@ document.addEventListener("click", (e) => { const a = e.target.closest("[data-op
 function render() {
   const q = $("#q").value.trim().toLowerCase(), site = $("#site").hidden ? "" : $("#site").value;
   let list = items.filter((e) => (!kind || e.kind === kind) && (!site || e.extractor === site)
-    && (!q || `${e.title} ${e.name} ${e.uploader} ${e.folder} ${e.owner_name} ${e.extractor}`.toLowerCase().includes(q)));
+    && (!q || [e.title, e.name, e.uploader, e.folder, e.owner_name, e.extractor].filter(Boolean).join(" ").toLowerCase().includes(q)));
   const s = $("#sort").value;
   list.sort((a, b) => s === "old" ? a.added - b.added : s === "big" ? b.size - a.size : s === "long" ? (b.duration || 0) - (a.duration || 0)
     : s === "name" ? String(a.title).localeCompare(String(b.title)) : b.added - a.added);
@@ -702,27 +726,36 @@ function render() {
     : scope.startsWith("coll:") ? "Diese Sammlung ist noch leer.<br>Öffne eine Datei und tippe auf „Zur Sammlung“ – oder wähle mehrere mit „Auswählen“."
     : scope === "family" ? "Noch nichts geteilt.<br>Öffne eine deiner Dateien und tippe auf „Mit Familie teilen“."
     : "Noch nichts heruntergeladen.<br>Tippe auf „＋ Link“ oder nutze die Browser-Erweiterung.";
-  $("#grid").innerHTML = list.map((e) => {
-    if (e.album && groups[e.album].length > 1) return albumCard(e);
-    const bg = thumbOf(e);
-    const icon = !bg ? ic(e.kind === "audio" ? "music" : e.kind === "video" ? "play" : "file") : "";
+  $("#grid").innerHTML = list.map((e) => e.album && groups[e.album].length > 1 ? albumCard(e) : cardHtml(e)).join("");
+  drawSel();
+}
+function cardHtml(e) {
+    const img = thumbImg(e);
+    const icon = !img ? ic(e.kind === "audio" ? "music" : e.kind === "video" ? "play" : "file") : "";
     const mine = e.owner === me.id;
     const warn = e.delete_at ? `<div class="warn">Wird gleich gelöscht</div>` : "";
     const p = pos[e.id] && e.duration ? Math.min(100, pos[e.id] / e.duration * 100) : 0;
     return `<div class="card${sel?.has(e.id) ? " sel" : ""}" data-id="${esc(e.id)}" tabindex="0" role="button"${sel ? ` aria-pressed="${sel.has(e.id)}"` : ""}>
-      <div class="thumb" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${icon}${sel ? tick : ""}${p ? `<span class="prog" title="Angefangen"><i style="width:${p}%"></i></span>` : ""}
+      <div class="thumb">${img}${icon}${sel ? tick : ""}${p ? `<span class="prog" title="Angefangen"><i style="width:${p}%"></i></span>` : ""}
         <span class="kind"${sel ? " hidden" : ""}>${KIND[e.kind] || "Datei"}</span>${e.pinned ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
         ${e.shared && mine ? `<span class="shr" title="Mit der Familie geteilt">${ic("users")}</span>` : ""}
         ${!mine ? `<span class="av owner" title="${esc(e.owner_name)}">${esc(e.owner_avatar)}</span>` : ""}
         ${e.duration ? `<span class="badge">${fmtDur(e.duration)}</span>` : ""}</div>
       <div class="info"><div class="title">${favs.has(e.id) ? favMark : ""}${esc(e.title)}</div>
         <div class="meta">${esc([!mine ? e.owner_name : e.uploader, fmtBytes(e.size), ago(e.added)].filter(Boolean).join(" · "))}</div>${warn}</div></div>`;
-  }).join("");
-  drawSel();
+}
+// Nur eine Karte neu zeichnen (Favorit, Fortschritt) statt der ganzen Mediathek
+function redrawCard(id) {
+  const c = $(`#grid .card[data-id="${CSS.escape(id)}"]`), e = items.find((x) => x.id === id);
+  if (!c || !e) return;
+  const focused = document.activeElement === c;
+  c.outerHTML = cardHtml(e);
+  if (focused) $(`#grid .card[data-id="${CSS.escape(id)}"]`)?.focus();
 }
 const tick = `<span class="tick">${ic("check")}</span>`;
 const favMark = `<span class="favmark" title="Favorit">${ic("star")}</span>`;
-$("#q").addEventListener("input", render);
+let searchT;
+$("#q").addEventListener("input", () => { clearTimeout(searchT); searchT = setTimeout(render, 150); });
 $("#sort").value = store.get("kinbox_sort") || "new";
 $("#sort").addEventListener("change", () => { store.set("kinbox_sort", $("#sort").value); render(); });
 $("#site").addEventListener("change", render);
@@ -747,8 +780,9 @@ let current = null;
 $("#grid").addEventListener("click", (e) => {
   const c = e.target.closest(".card"); if (!c) return;
   if (sel) {
-    const k = c.dataset.album ? "a:" + c.dataset.album : c.dataset.id; sel.has(k) ? sel.delete(k) : sel.add(k); render();
-    return $(c.dataset.album ? `#grid [data-album="${CSS.escape(c.dataset.album)}"]` : `#grid [data-id="${CSS.escape(k)}"]`)?.focus();
+    const k = c.dataset.album ? "a:" + c.dataset.album : c.dataset.id; sel.has(k) ? sel.delete(k) : sel.add(k);
+    c.classList.toggle("sel", sel.has(k)); c.setAttribute("aria-pressed", sel.has(k));   // nur diese Karte, kein render()
+    return drawSel();
   }
   if (c.dataset.album) openAlbum(c.dataset.album); else openPlayer(items.find((x) => x.id === c.dataset.id));
 });
@@ -759,13 +793,13 @@ for (const g of ["#grid", "#aGrid"]) $(g).addEventListener("keydown", (e) => {
 
 // ---- Album: alle Dateien eines Foto-Beitrags --------------------------------
 let albumId = null;
-const albumItems = (id) => items.filter((x) => x.album === id).sort((a, b) => a.name.localeCompare(b.name));
+const albumItems = (id) => albums.get(id) || [];   // in load() einmal gruppiert + sortiert
 const albumTitle = (e) => e.title.replace(/ \(\d+\/\d+\)$/, "");
 function albumCard(e) {
   const all = albumItems(e.album), cover = all.find((x) => x.kind === "image") || all[0], mine = e.owner === me.id;
   const imgs = all.filter((x) => x.kind === "image").length, size = all.reduce((n, x) => n + (x.size || 0), 0);
   return `<div class="card${sel?.has("a:" + e.album) ? " sel" : ""}" data-album="${esc(e.album)}" tabindex="0" role="button"${sel ? ` aria-pressed="${sel.has("a:" + e.album)}"` : ""}>
-    <div class="thumb" style="background-image:url('${esc(thumbOf(cover))}')">${sel ? tick : ""}
+    <div class="thumb">${thumbImg(cover)}${sel ? tick : ""}
       <span class="kind"${sel ? " hidden" : ""}>Album</span>${all.some((x) => x.pinned) ? `<span class="pin" title="Wird nie automatisch gelöscht">${ic("pin")}</span>` : ""}
       ${e.shared && mine ? `<span class="shr" title="Mit der Familie geteilt">${ic("users")}</span>` : ""}
       ${!mine ? `<span class="av owner" title="${esc(e.owner_name)}">${esc(e.owner_avatar)}</span>` : ""}
@@ -780,8 +814,8 @@ function openAlbum(id) {
   const c = all.find((x) => x.kind === "image") || all[0];
   $("#aTitle").textContent = albumTitle(c);
   $("#aMeta").textContent = [c.uploader, fmtBytes(all.reduce((n, x) => n + (x.size || 0), 0)), ago(c.added), c.folder].filter(Boolean).join(" · ");
-  $("#aGrid").innerHTML = all.map((x) => { const bg = thumbOf(x);
-    return `<div class="thumb" data-id="${esc(x.id)}" tabindex="0" role="button" aria-label="${esc(x.name)}" title="${esc(x.name)}" style="${bg ? `background-image:url('${esc(bg)}')` : ""}">${bg ? "" : ic(x.kind === "audio" ? "music" : "file")}</div>`; }).join("");
+  $("#aGrid").innerHTML = all.map((x) => { const img = thumbImg(x);
+    return `<div class="thumb" data-id="${esc(x.id)}" tabindex="0" role="button" aria-label="${esc(x.name)}" title="${esc(x.name)}">${img || ic(x.kind === "audio" ? "music" : "file")}</div>`; }).join("");
   $("#aDownload").innerHTML = `${ic("download")} Alle aufs Gerät (${all.length})`;
   $("#aSource").href = c.url || "#";
   $("#aSource").hidden = !c.url || !/^https?:/.test(c.url);
@@ -803,15 +837,23 @@ $("#closeAlbum").addEventListener("click", () => $("#albumDlg").close());
 $("#albumDlg").addEventListener("click", (e) => { if (e.target === $("#albumDlg")) $("#albumDlg").close(); });
 function openPlayer(e) {
   if (!e) return;
-  stopMedia();
-  current = e;
   const src = fileUrl(e.id, "stream"), m = $("#media");
-  if (e.kind === "video") m.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline poster="${esc(thumbOf(e))}"></video>`;
-  else if (e.kind === "audio") m.innerHTML = `${thumbOf(e) ? `<div class="cover" style="background-image:url('${esc(thumbOf(e))}')"></div>` : ""}<audio src="${esc(src)}" controls autoplay></audio>`;
+  const cover = (x) => thumbOf(x) ? `<div class="cover" style="background-image:url('${esc(thumbOf(x))}')"></div>` : "";
+  // Musik → Musik: dasselbe <audio> behalten und nur die Quelle tauschen – so läuft es im Hintergrund/Sperrbildschirm weiter
+  const keep = e.kind === "audio" && current?.kind === "audio" && $("#playerDlg").open ? $("#media audio") : null;
+  stopMedia(keep ? "keep" : "");
+  current = e;
+  const signal = (mediaAC = new AbortController()).signal;
+  if (keep) {
+    m.querySelector(".cover")?.remove(); keep.insertAdjacentHTML("beforebegin", cover(e));
+    keep.src = src; keep.play().catch(() => {});
+  }
+  else if (e.kind === "video") m.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline poster="${esc(thumbOf(e))}"></video>`;
+  else if (e.kind === "audio") m.innerHTML = `${cover(e)}<audio src="${esc(src)}" controls autoplay></audio>`;
   else if (e.kind === "image" || e.kind === "gif") m.innerHTML = `<img src="${esc(src)}" alt="">`;
   else m.innerHTML = `<div style="padding:40px;color:#aaa">Keine Vorschau</div>`;
   const v = m.querySelector("video");
-  if (v) v.addEventListener("error", () => m.insertAdjacentHTML("beforeend", `<div style="color:#fff;padding:10px">Dieses Format kann der Browser nicht abspielen – lade die Datei herunter.</div>`), { once: true });
+  if (v) v.addEventListener("error", () => m.insertAdjacentHTML("beforeend", `<div style="color:#fff;padding:10px">Dieses Format kann der Browser nicht abspielen – lade die Datei herunter.</div>`), { once: true, signal });
   const mine = e.owner === me.id, canEdit = mine || isAdmin;
   $("#pTitle").textContent = e.title;
   $("#pMeta").textContent = [!mine ? `${e.owner_avatar} ${e.owner_name}` : "", e.uploader, fmtBytes(e.size), fmtDur(e.duration), ago(e.added), e.folder, e.name].filter(Boolean).join(" · ");
@@ -829,13 +871,14 @@ function openPlayer(e) {
   $("#pEdit").hidden = !canEdit || !["video", "audio"].includes(e.kind);
   $("#editBox").hidden = true; $("#eStart").value = $("#eEnd").value = "";
   const el = m.querySelector("video, audio"), resume = pos[e.id];
+  // Alle Listener hängen an mediaAC – stopMedia() meldet sie ab (sonst sendet „pause“ beim Schließen die Position ein zweites Mal)
   el?.addEventListener("loadedmetadata", () => {
     if (!$("#editBox").hidden) setupRange();
     if (resume && resume < el.duration - 10) { el.currentTime = resume; toast(`Weiter bei ${fmtDur(resume)}`); }
-  });
-  el?.addEventListener("timeupdate", () => { if (Math.abs(el.currentTime - (pos[e.id] || 0)) >= 3) savePos(e, el); markChapter(el); });
-  el?.addEventListener("pause", () => savePos(e, el, true));
-  el?.addEventListener("ended", () => { savePos(e, null, true); const n = neighbor(1); if (e.kind === "audio" && n?.kind === "audio") openPlayer(n); });
+  }, { signal });
+  el?.addEventListener("timeupdate", () => { if (Math.abs(el.currentTime - (pos[e.id] || 0)) >= 3) savePos(e, el); markChapter(el); }, { signal });
+  el?.addEventListener("pause", () => savePos(e, el, true), { signal });
+  el?.addEventListener("ended", () => { savePos(e, null, true); const n = neighbor(1); if (e.kind === "audio" && n?.kind === "audio") openPlayer(n); }, { signal });
   drawNav();
   $("#pSpeed").hidden = !el; $("#pPip").hidden = !(v && document.pictureInPictureEnabled);
   if (el) setRate(v ? rate : 1, false);   // gemerktes Tempo nur für Videos – Musik startet normal
@@ -863,13 +906,17 @@ function sendPos(id, sec, leaving) {
 }
 // now: sofort senden (Pause, Ende, Schließen) – sonst höchstens alle 15 s
 function savePos(e, el, now, leaving) {
+  if (el && el.readyState < 1) return;   // noch keine Metadaten (z. B. gerade Quelle getauscht) – currentTime ist dann bedeutungslos
   const sec = el ? el.currentTime : 0, dur = (el && el.duration) || e.duration, had = e.id in pos;
   const v = sec > 5 && sec < dur - 10 ? Math.round(sec) : 0;
   if (v) pos[e.id] = v; else delete pos[e.id];
   if ((!v && !had) || (!now && Date.now() - posSent < 15000)) return;
   posSent = Date.now(); sendPos(e.id, v, leaving);
 }
-addEventListener("pagehide", () => { const el = mediaEl(); if (el && current && token) savePos(current, el, true, true); });
+addEventListener("pagehide", () => {
+  const el = mediaEl(); if (el && current && token) savePos(current, el, true, true);
+  if (held && token) savePos(held.e, held.el, true, true);
+});
 
 // Tempo (für Videos gemerkt), Bild-in-Bild
 const RATES = [1, 1.25, 1.5, 1.75, 2, 0.5, 0.75];
@@ -903,8 +950,9 @@ async function loadExtras(e, el) {
       const tr = document.createElement("track");
       tr.kind = "subtitles"; tr.src = fileUrl(e.id, "subs/" + i); tr.srclang = sub.lang;
       tr.label = [sub.label, sub.lang].filter(Boolean).join(" · ") || t("Untertitel") + " " + (i + 1);
-      if (want && !done && sub.lang === want) tr.default = done = true;
       el.append(tr);
+      // „default“ wirkt bei nachträglich angehängten Spuren nicht zuverlässig → direkt einschalten
+      if (want && !done && sub.lang === want) { tr.default = done = true; tr.track.mode = "showing"; }
     });
     // Wahl merken: beim nächsten Video dieselbe Sprache wieder einschalten
     el.textTracks.addEventListener("change", () => { const on = [...el.textTracks].find((y) => y.mode === "showing"); store.set("kinbox_subs", on ? on.language : ""); });
@@ -944,10 +992,29 @@ function setSession(e, el) {
   set("seekbackward", (d) => { el.currentTime = Math.max(0, el.currentTime - (d.seekOffset || 10)); });
   set("seekforward", (d) => { el.currentTime += d.seekOffset || 10; });
 }
-function stopMedia() {
+// how: "keep" = Element bleibt (Musik → Musik), "close" = Player wird geschlossen, sonst = anderes wird geöffnet
+let mediaAC = null, held = null;   // held: Video, das nach dem Schließen im Bild-in-Bild weiterläuft
+const unload = (el) => { el.pause(); el.removeAttribute("src"); el.load(); };   // Download/Dekoder sofort freigeben
+function stopMedia(how) {
   const el = mediaEl(); if (el && current) savePos(current, el, true);
-  if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
+  if (held && how !== "close") document.exitPictureInPicture().catch(() => {});   // beendet held (leavepictureinpicture)
+  if (how === "close" && el && el === document.pictureInPictureElement) {
+    // Bild-in-Bild soll weiterlaufen: Element samt Listenern in einen versteckten Behälter verschieben statt löschen
+    const h = held = { el, e: current, ac: mediaAC }; mediaAC = null;
+    let box = $("#pipHold"); if (!box) { box = document.createElement("div"); box.id = "pipHold"; box.setAttribute("aria-hidden", "true"); document.body.append(box); }
+    box.append(el);
+    el.addEventListener("leavepictureinpicture", () => {
+      savePos(h.e, h.el, true); h.ac?.abort(); unload(h.el); h.el.remove();
+      if (held === h) { held = null; if (!$("#playerDlg").open && "mediaSession" in navigator) navigator.mediaSession.metadata = null; }
+    }, { once: true });
+    $("#media").innerHTML = "";
+    return;
+  }
+  mediaAC?.abort(); mediaAC = null;
+  if (how === "keep") return;
+  if (el && el === document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {});
   if ("mediaSession" in navigator) navigator.mediaSession.metadata = null;
+  if (el) unload(el);
   $("#media").innerHTML = "";
 }
 // Vorheriges/Nächstes: Reihenfolge wie in der Mediathek bzw. im offenen Album
@@ -990,7 +1057,8 @@ function drawFav() { const on = favs.has(current.id); $("#pFav").innerHTML = (on
 function closePlayer() { $("#playerDlg").close(); }
 $("#closePlayer").addEventListener("click", closePlayer);
 $("#playerDlg").addEventListener("close", () => {
-  stopMedia(); render();   // Fortschrittsbalken aktualisieren
+  if ($("#playerDlg").open) return;   // „close“ kam verspätet, der Player ist schon wieder offen – nicht das Neue stoppen
+  stopMedia("close"); redrawCard(current.id);   // Fortschrittsbalken dieser Karte aktualisieren
   if (!$("#albumDlg").open) $(`#grid [data-id="${CSS.escape(current.id)}"]`)?.focus();
 });
 $("#playerDlg").addEventListener("click", (e) => { if (e.target === $("#playerDlg")) closePlayer(); });
@@ -1030,7 +1098,8 @@ $("#renameBox").addEventListener("submit", async (ev) => {
 // ---- Organisieren: Favoriten, Sammlungen, Mehrfachauswahl -----------------
 async function setFav(ids, on) {
   const r = await api("/api/library/favs", { method: "POST", body: JSON.stringify(on ? { add: ids } : { remove: ids }) });
-  favs = new Set(r.favs); drawColls(); scope === "favs" ? load() : render();
+  favs = new Set(r.favs); drawColls();
+  if (scope === "favs") load(); else ids.forEach(redrawCard);   // nur die betroffenen Karten (Stern am Titel)
 }
 function drawColls() {
   const cur = colls.find((c) => "coll:" + c.id === scope);
@@ -1212,10 +1281,17 @@ function offerLink(text) {
   openAdd(url); return true;
 }
 const isLinkDrag = (e) => [...e.dataTransfer.types].some((x) => x === "text/uri-list" || x === "text/plain");
-document.addEventListener("dragover", (e) => { if (isLinkDrag(e) && !$("dialog[open]")) { e.preventDefault(); document.body.classList.add("dropping"); } });
+// Losgelassene Dateien nicht vom Browser öffnen lassen (sonst navigiert die Seite weg) – außer auf einem Datei-Feld
+// (Bild aus einer anderen Webseite gezogen: hat auch einen Link → bleibt Link-Angebot)
+const isFileDrag = (e) => [...e.dataTransfer.types].includes("Files") && !isLinkDrag(e) && !e.target.closest?.("input[type=file]");
+document.addEventListener("dragover", (e) => {
+  if (isFileDrag(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "none"; return; }
+  if (isLinkDrag(e) && !$("dialog[open]")) { e.preventDefault(); document.body.classList.add("dropping"); }
+});
 document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) document.body.classList.remove("dropping"); });
 document.addEventListener("drop", (e) => {
   document.body.classList.remove("dropping");
+  if (isFileDrag(e)) return e.preventDefault();
   if (offerLink(e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain"))) e.preventDefault();
 });
 document.addEventListener("paste", (e) => { if (!e.target.closest?.("input, textarea") && offerLink(e.clipboardData.getData("text"))) e.preventDefault(); });
@@ -1248,6 +1324,7 @@ function showTab(tab) {
   $$("#setTabs button").forEach((b) => b.classList.toggle("active", b.dataset.t === tab));
   $$("#setDlg [data-p]").forEach((p) => p.hidden = p.dataset.p !== tab);
   if (tab === "family") loadPeople();
+  if (tab === "server" && isAdmin) checkAppUpdate();   // fragt GitHub – nur, wenn der Reiter auch angesehen wird
 }
 $("#setTabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-t]"); if (b) showTab(b.dataset.t); });
 $$("#setDlg [data-close]").forEach((b) => b.addEventListener("click", () => $("#setDlg").close()));
@@ -1260,23 +1337,22 @@ function emojiPicker(el, selected, onPick) {
 
 async function openSettings(tab = "profile") {
   try {
-    const p = await api("/api/ping");
-    const m = await api("/api/me");
+    const [p, m] = await Promise.all([api("/api/ping"), api("/api/me")]);
     me = p.user; isAdmin = p.is_admin;
     prof = { name: me.name, avatar: me.avatar, color: me.color };
     $("#profName").value = me.name;
     const drawAv = () => { $("#profAv").style.setProperty("--c", prof.color); $("#profAv").textContent = prof.avatar; };
     drawAv();
     emojiPicker($("#profEmojis"), me.avatar, (a) => { prof.avatar = a; drawAv(); });
-    $("#profColors").innerHTML = COLORS.map((c) => `<button type="button" style="background:${c}" data-c="${c}" class="${c === me.color ? "active" : ""}"></button>`).join("");
-    $("#profColors").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; prof.color = b.dataset.c; $$("#profColors button").forEach((x) => x.classList.toggle("active", x === b)); drawAv(); };
+    $("#profColors").innerHTML = COLORS.map((c, i) => `<button type="button" style="background:${c}" data-c="${c}" class="${c === me.color ? "active" : ""}" aria-label="Farbe ${i + 1}" aria-pressed="${c === me.color}"></button>`).join("");
+    $("#profColors").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; prof.color = b.dataset.c; $$("#profColors button").forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-pressed", x === b); }); drawAv(); };
     prof.look = { style: "classic", accent: "#7c5cff", ...(me.look || {}) };
     const drawLook = () => {
       $$("#profLooks .look").forEach((b) => b.classList.toggle("active", b.dataset.style === prof.look.style));
-      $$("#profAccents button").forEach((b) => b.classList.toggle("active", b.dataset.c === prof.look.accent));
+      $$("#profAccents button").forEach((b) => { b.classList.toggle("active", b.dataset.c === prof.look.accent); b.setAttribute("aria-pressed", b.dataset.c === prof.look.accent); });
       applyLook(prof.look);
     };
-    $("#profAccents").innerHTML = ACCENTS.map((c) => `<button type="button" style="background:${c}" data-c="${c}"></button>`).join("");
+    $("#profAccents").innerHTML = ACCENTS.map((c, i) => `<button type="button" style="background:${c}" data-c="${c}" aria-label="Akzentfarbe ${i + 1}"></button>`).join("");
     $("#profLooks").onclick = (e) => { const b = e.target.closest(".look"); if (b) { prof.look.style = b.dataset.style; drawLook(); } };
     $("#profAccents").onclick = (e) => { const b = e.target.closest("button"); if (b) { prof.look.accent = b.dataset.c; drawLook(); } };
     drawLook();
@@ -1295,7 +1371,6 @@ async function openSettings(tab = "profile") {
     if (isAdmin) {
       $("#nStart").value = p.night.start.padStart(5, "0");
       $("#nEnd").value = p.night.end.padStart(5, "0");
-      checkAppUpdate();
       api("/api/cookies").then(showCookies).catch(() => {});
       $("#srvInfo").innerHTML = `Kinbox ${esc(p.version)} · yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>`;
     }
@@ -1311,7 +1386,9 @@ $("#profForm").addEventListener("submit", async (e) => {
   const body = { name: $("#profName").value.trim(), avatar: prof.avatar, color: prof.color, look: prof.look };
   if ($("#profPinOff").checked) body.pin = "";
   else if ($("#profPin").value.trim()) body.pin = $("#profPin").value.trim();
-  try { await api("/api/me", { method: "POST", body: JSON.stringify(body) }); toast("Gespeichert"); $("#setDlg").close(); load(); }
+  try { await api("/api/me", { method: "POST", body: JSON.stringify(body) }); toast("Gespeichert");
+    me.look = prof.look;   // sonst setzt der close-Handler das alte Aussehen zurück, bis load() antwortet
+    $("#setDlg").close(); load(); }
   catch (err) { toast(err.message, true); }
 });
 $("#setDlg").addEventListener("close", () => applyLook(me?.look));  // nicht gespeicherte Vorschau verwerfen
@@ -1372,7 +1449,14 @@ $("#srvForm").addEventListener("submit", async (e) => {
 });
 
 // ---- Familie verwalten (Admin) -------------------------------------------
-let people = [], openEdit = null, confirmDel = null;
+let people = [], openEdit = null, confirmDel = null, confirmT;
+function drawDel(id) {
+  const p = $(`#people .person[data-id="${CSS.escape(id)}"]`), b = p?.querySelector('[data-a="del"]'); if (!b) return;
+  const on = confirmDel === id;
+  b.textContent = on ? "Wirklich? Dateien behalten" : "Löschen";
+  p.querySelector('[data-a="delfiles"]')?.remove();
+  if (on) b.insertAdjacentHTML("afterend", `<button class="btn danger" data-a="delfiles">…und Dateien löschen</button>`);
+}
 async function loadPeople() {
   try { people = await api("/api/users"); } catch (e) { return toast(e.message, true); }
   $("#people").innerHTML = people.map((u) => {
@@ -1416,10 +1500,17 @@ $("#people").addEventListener("click", async (e) => {
     if (a === "cancel") { openEdit = null; return loadPeople(); }
     if (a === "token") { await api(`/api/users/${id}/token`, { method: "POST" }); toast("Neuer Schlüssel – bitte neu einladen"); if (id === me.id) { location.reload(); return; } }
     if (a === "del") {
-      if (confirmDel !== id) { confirmDel = id; setTimeout(() => { confirmDel = null; loadPeople(); }, 5000); return loadPeople(); }
-      await api(`/api/users/${id}`, { method: "DELETE" }); toast(`${u.name} entfernt – Dateien gehören jetzt dir`); confirmDel = null;
+      if (confirmDel !== id) {   // nur die Löschknöpfe umschalten – Eingaben in offenen Formularen bleiben erhalten
+        const was = confirmDel; confirmDel = id; clearTimeout(confirmT);
+        if (was) drawDel(was);
+        drawDel(id);
+        confirmT = setTimeout(() => { confirmDel = null; drawDel(id); }, 5000);
+        return;
+      }
+      clearTimeout(confirmT); confirmDel = null;
+      await api(`/api/users/${id}`, { method: "DELETE" }); toast(`${u.name} entfernt – Dateien gehören jetzt dir`);
     }
-    if (a === "delfiles") { const r = await api(`/api/users/${id}?files=1`, { method: "DELETE" }); toast(`${u.name} entfernt, ${r.removed_files} Dateien gelöscht`); confirmDel = null; }
+    if (a === "delfiles") { clearTimeout(confirmT); confirmDel = null; const r = await api(`/api/users/${id}?files=1`, { method: "DELETE" }); toast(`${u.name} entfernt, ${r.removed_files} Dateien gelöscht`); }
     loadPeople(); load();
   } catch (err) { toast(err.message, true); }
 });
@@ -1492,21 +1583,37 @@ $("#subForm").addEventListener("submit", async (e) => {
 });
 
 // ---- Laufende Downloads -------------------------------------------------
-let pollT, lastActive = 0;
+let pollT, pollGen = 0, lastActive = 0;
+// Jeder Aufruf beendet die vorige Kette (Generationszähler) – sonst laufen nach Login/Link/Bearbeiten mehrere Timer parallel
 async function pollJobs() {
   clearTimeout(pollT);
-  if (!token) return;
+  const gen = ++pollGen;
+  if (!token || document.hidden) return;   // Tab im Hintergrund: Pause, visibilitychange startet neu
   try {
     const jobs = await api("/api/jobs");
+    if (gen !== pollGen) return;
     const active = jobs.filter((j) => ["running", "queued", "scheduled"].includes(j.status));
-    $("#jobs").innerHTML = active.map((j) => `<div class="job"><div class="t">${esc(j.title)}</div>
-      <div class="s">${j.status === "scheduled" ? ic("moon") + " Nachts" : esc(j.status === "queued" ? "Wartet" : j.stage)}${j.percent && j.status === "running" ? " · " + Math.round(j.percent) + " %" : ""}</div>
-      <div class="pbar"><i style="width:${j.percent || 0}%"></i></div></div>`).join("");
+    drawJobs(active);
     const running = active.filter((j) => j.status !== "scheduled").length;
-    if (running < lastActive) load();
+    if (running < lastActive) { clearTimeout(loadSoonT); loadSoonT = setTimeout(load, 1000); }   // mehrere fertige Downloads → einmal laden
     lastActive = running;
     pollT = setTimeout(pollJobs, running ? 1500 : 8000);
-  } catch { pollT = setTimeout(pollJobs, 10000); }
+  } catch { if (gen === pollGen) pollT = setTimeout(pollJobs, 10000); }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && token && $("#picker").hidden) pollJobs(); });
+// Zeilen pro Auftrag aktualisieren statt die ganze Liste neu zu bauen (Fortschrittsbalken animiert dann sauber)
+function drawJobs(active) {
+  const box = $("#jobs"), keep = new Set(active.map((j) => String(j.id)));
+  for (const row of [...box.children]) if (!keep.has(row.dataset.job)) row.remove();
+  active.forEach((j, i) => {
+    let row = box.querySelector(`[data-job="${CSS.escape(String(j.id))}"]`);
+    if (!row) { row = document.createElement("div"); row.className = "job"; row.dataset.job = j.id; row.innerHTML = `<div class="t"></div><div class="s"></div><div class="pbar"><i></i></div>`; }
+    if (box.children[i] !== row) box.insertBefore(row, box.children[i] || null);
+    const s = `${j.status === "scheduled" ? ic("moon") + " Nachts" : esc(j.status === "queued" ? "Wartet" : j.stage)}${j.percent && j.status === "running" ? " · " + Math.round(j.percent) + " %" : ""}`;
+    if (row.dataset.title !== (j.title || "")) { row.dataset.title = j.title || ""; row.querySelector(".t").textContent = j.title || ""; }
+    if (row.dataset.s !== s) { row.dataset.s = s; row.querySelector(".s").innerHTML = s; }
+    row.querySelector(".pbar i").style.width = (j.percent || 0) + "%";
+  });
 }
 
 let toastT;

@@ -198,7 +198,7 @@ Jede Person hat ihren **eigenen Bereich**: eigener Ordner, eigene Mediathek, eig
 | **Musik-Modus** | Interpret und Titel werden sauber aus „Interpret – Titel" gelesen, Cover quadratisch zugeschnitten |
 | **Ordnerstruktur** | Alles in einen Ordner, nach Kanal, **Plex/Jellyfin** (Kanal › Season Jahr › Folge) oder Musik (Interpret › Titel) |
 | **Nachts laden** | 🌙-Schalter: Download startet erst im Nachtfenster (Standard 01:00–07:00) |
-| **Doppelt-Warnung** | Das Popup zeigt „Schon in der Kinbox", wenn das Video schon geladen wurde |
+| **Doppelt-Warnung** | Das Popup zeigt „Schon in der Kinbox", wenn das Video schon geladen wurde. Lädt man ein einzelnes Video trotzdem nochmal (z. B. in besserer Qualität), ersetzt es die alte Datei |
 | **Presets** | 10 eingebaute (u. a. WhatsApp, GIF, Video + MP3, Musik mit Tags) + beliebig viele eigene |
 | **Schnellzugriff** | „Kinbox"-Button unter YouTube-Videos, schwebender Button auf TikTok, Instagram, X und Reddit (Ecke wählbar, pro Seite abschaltbar: Menü ▾ am Knopf oder *Einstellungen → Verhalten*), Rechtsklick, Tastenkürzel |
 | **Benachrichtigung** | wenn fertig – mit Knopf „Auf diesen PC speichern" |

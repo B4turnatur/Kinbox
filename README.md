@@ -90,7 +90,7 @@ Runs on your PC, no cloud, no account. Just this PC or your whole home network.
 - **Video + MP3 in one go** (preset or switch "Also save as audio file") – e.g. the MP4 for OBS and the MP3 for Voicemod
 - **Edit later in the library:** open a file → ✂ *Edit* → trim (with "Now" from the player), save as audio / change format, convert to MP4, GIF, shrink, remove sound, rotate, normalize volume. The result appears as a new file; the original stays unless you turn off "Keep the original".
 - **Folder layouts:** flat, by channel, **Plex/Jellyfin** (channel › season year › episode) or music (artist › title)
-- **Download at night** (scheduled window), duplicate warning, 10 built-in presets plus your own
+- **Download at night** (scheduled window), duplicate warning (downloading a single video again – e.g. in better quality – replaces the old file), 10 built-in presets plus your own
 - **One-click buttons** on YouTube, TikTok, Instagram, X and Reddit, right-click menu, keyboard shortcuts, notifications with "Save to this PC". The floating button can be moved to any corner of the video or hidden per site (button menu ▾ or *Settings → Behavior*)
 - **Your look**: four styles (Classic, Clean, Paper, Terminal) and eight accent colors with clean line icons – in the extension under *Settings → Appearance*, in the library per profile under *your profile → Appearance*
 - **Web library** (works great on phones, installable as a PWA): search, filter, play, download to the device, 📌 keep

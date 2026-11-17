@@ -31,6 +31,9 @@ assert after(args(quality="best"), "-S").startswith("res,fps"), args(quality="be
 assert after(args(quality="best", vcodec="h264"), "-S").startswith("res,vcodec:h264,fps")
 assert after(args(quality="1080", vcodec="h264"), "-S").startswith("res:1080,vcodec:h264,fps")
 assert after(args(quality="best", prefer60fps=False), "-S") == "res,acodec:m4a"
+# Einzelvideo nochmal laden ersetzt die alte Datei, Playlists überspringen Vorhandenes
+assert "--force-overwrites" in args(quality="best")
+assert "--force-overwrites" not in args(playlist="all") and "--force-overwrites" not in args(playlist="items", playlistItems="1-3")
 try:
     args(quality="hoch")
     raise AssertionError("ungültige Qualität angenommen")

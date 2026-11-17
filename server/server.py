@@ -27,7 +27,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.21.1"
+APP_VERSION = "3.21.2"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -240,7 +240,7 @@ def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: P
         "-P", f"temp:{temp_dir or download_root() / '.tmp'}",
         "--progress-template", "download:@@P%(progress)j",
         "--progress-template", "postprocess:@@Q%(progress.status)s|%(progress.postprocessor)s",
-        "--print", "before_dl:@@I%(.{title,thumbnail,id,playlist_index,n_entries,extractor_key,uploader,duration,webpage_url,track,vcodec})j",
+        "--print", "before_dl:@@I%(.{title,thumbnail,id,playlist_index,n_entries,extractor_key,uploader,duration,webpage_url,track,vcodec,format_id,resolution})j",
         "--print", "after_move:@@F%(filepath|)j",
         "--no-mtime",
     ]
@@ -255,7 +255,9 @@ def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: P
             raise OptionError("Ungültige Playlist-Auswahl (Beispiel: 1-5,8,10)")
         a += ["--yes-playlist", "--playlist-items", items]
     else:
-        a += ["--no-playlist"]
+        # Einzelvideo bewusst nochmal geladen (z. B. andere Qualität) → vorhandene Datei ersetzen. Sonst meldet
+        # yt-dlp still „schon da“ und die alte Datei bleibt. Playlists überspringen Vorhandenes weiter.
+        a += ["--no-playlist", "--force-overwrites"]
 
     # ---- Dateiname ---------------------------------------------------------
     tpl = (opts.get("filenameTemplate") or "").strip()
@@ -844,6 +846,10 @@ def _read_ytdlp(job: Job, sound: dict | None, spot_photos: bool = False) -> tupl
                                 uploader=sound["artist"] or meta.get("uploader"), thumbnail=sound["cover"] or meta.get("thumbnail"))
                     job.title = meta["title"] or job.title
                 meta.pop("track", None)
+                # --print macht yt-dlp still – gewähltes Format selbst ins Log schreiben (z. B. „Format: 401+140 · 3840x2160“)
+                fid, res = meta.pop("format_id", None), meta.pop("resolution", None)
+                if fid:
+                    job.log.append(f"Format: {fid} · {res or '?'} · {meta.get('vcodec') or '?'}")
                 if meta.pop("vcodec", None) == "none" and spot_photos and not job.files:
                     job.slideshow = photo_link(meta.get("webpage_url") or tiktok_full(job.url))
                     kill_tree(job.proc)

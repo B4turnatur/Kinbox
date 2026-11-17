@@ -34,7 +34,7 @@ home = next(a[5:] for a in sys.argv if a.startswith("home:"))
 step = plan[min(n, len(plan)) - 1]
 for name in step.get("files", []):
     f = pathlib.Path(home) / name; f.parent.mkdir(parents=True, exist_ok=True); f.write_bytes(b"x")
-    print("@@I" + json.dumps({"title": name}))
+    print("@@I" + json.dumps({"title": name, "format_id": "401+140", "resolution": "3840x2160", "vcodec": "av01"}))
     print("@@F" + json.dumps(str(f)))
 if step.get("slideshow"):      # TikTok-Fotos hinter /video/-Link: nur Ton, der Server muss hier abbrechen
     import time
@@ -71,6 +71,8 @@ with tempfile.TemporaryDirectory() as d:
     job, n = run(d, [{"rc": 1, "errors": ["Unable to download webpage: timed out"]}, {"files": ["a.mp4"]}])
     assert (job.status, job.error, n) == ("finished", "", 2), (job.status, job.error, n)
     assert any("Neuer Versuch (2/3)" in l for l in job.log) and len(server.LIB) == 1
+    assert "Format: 401+140 · 3840x2160 · av01" in job.log, list(job.log)          # gewähltes Format sichtbar
+    assert not {"format_id", "resolution", "vcodec"} & set(next(iter(server.LIB.values()))), server.LIB  # nicht in die Mediathek
 
     # endgültiger Fehler (privat) → kein zweiter Versuch, verständlicher Text
     job, n = run(d, [{"rc": 1, "errors": ["Private video. Sign in if you've been granted access"]}])

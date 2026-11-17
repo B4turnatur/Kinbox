@@ -81,7 +81,76 @@ dialog { border: none; padding: 0; background: var(--bg2); color: var(--text); b
 dialog::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(3px); }
 .media { background: #000; display: grid; place-items: center; min-height: 120px; }
 .media video, .media img { max-width: 100%; max-height: 70vh; display: block; }
-.media audio { width: 92%; margin: 30px 0; }
+.media audio { display: none; }
+.media .cover.none { aspect-ratio: 16/6; display: grid; place-items: center; color: #fff; background: radial-gradient(circle at 50% 130%, color-mix(in srgb, var(--accent) 55%, #000), #000 72%); }
+.media .cover.none .i { width: 60px; height: 60px; opacity: .9; }
+/* Eigene Player-Steuerung statt der Browser-Leiste: schwebende Glas-Leiste, Farben aus dem gewählten Design */
+.stage { position: relative; background: #000; color: #fff; overflow: hidden; }
+.stage.video .media video { cursor: pointer; }
+.stage.idle .media video { cursor: none; }
+.pctl { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 6px; border-radius: min(14px, var(--round)); border: 1px solid rgba(255,255,255,.13);
+  background: rgba(16,16,22,.72); backdrop-filter: blur(22px) saturate(1.15); -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  box-shadow: 0 8px 30px rgba(0,0,0,.45); transition: opacity .25s, transform .25s; }
+.stage.video .pctl { position: absolute; left: 10px; right: 10px; bottom: 10px; z-index: 2; }
+.stage.audio .pctl { margin: 10px; }
+.stage.idle .pctl { opacity: 0; transform: translateY(8px); pointer-events: none; }
+.pctl-row { display: flex; align-items: center; gap: 4px; }
+.pctl .grow { flex: 1; }
+.pc { all: unset; box-sizing: border-box; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; cursor: pointer; color: #fff; flex: none; transition: background .15s, transform .1s; }
+.pc:hover { background: rgba(255,255,255,.14); }
+.pc:active { transform: scale(.92); }
+.pc:focus-visible, .rng:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pc .i { width: 20px; height: 20px; }
+#pPlay { background: var(--accent); color: #fff; }
+#pPlay:hover { filter: brightness(1.15); }
+.ptime { font-size: 12.5px; font-variant-numeric: tabular-nums; margin: 0 8px; white-space: nowrap; opacity: .92; }
+/* Regler (Zeitleiste + Lautstärke): --p = gefüllter Teil, --b = schon geladen */
+.rng { --p: 0%; --b: 0%; -webkit-appearance: none; appearance: none; width: 100%; height: 18px; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; cursor: pointer; display: block; }
+.rng::-webkit-slider-runnable-track { height: 5px; border-radius: 5px; transition: height .12s;
+  background: linear-gradient(90deg, var(--accent), var(--accent2, var(--accent))) 0 / var(--p) 100% no-repeat,
+              linear-gradient(rgba(255,255,255,.42), rgba(255,255,255,.42)) 0 / var(--b) 100% no-repeat, rgba(255,255,255,.2); }
+.rng::-moz-range-track { height: 5px; border-radius: 5px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2, var(--accent))) 0 / var(--p) 100% no-repeat,
+              linear-gradient(rgba(255,255,255,.42), rgba(255,255,255,.42)) 0 / var(--b) 100% no-repeat, rgba(255,255,255,.2); }
+.rng::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; margin-top: -5px; border-radius: 50%; background: #fff; border: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent), 0 1px 4px rgba(0,0,0,.5); transform: scale(0); transition: transform .12s; }
+.rng::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: #fff; border: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent), 0 1px 4px rgba(0,0,0,.5); }
+.rng:hover::-webkit-slider-thumb, .rng:active::-webkit-slider-thumb, .rng:focus-visible::-webkit-slider-thumb { transform: scale(1); }
+.rng:hover::-webkit-slider-runnable-track { height: 7px; }
+.rng:hover::-webkit-slider-thumb { margin-top: -4px; }
+.rng.vol { width: 86px; flex: none; }
+.rng.vol::-webkit-slider-thumb { transform: scale(1); width: 13px; height: 13px; margin-top: -4px; }
+.rng.vol:hover::-webkit-slider-thumb { margin-top: -3px; }
+@media (hover: none) { .rng::-webkit-slider-thumb { transform: scale(1); } .pc { width: 42px; height: 42px; } }
+@media (max-width: 520px) { .rng.vol { width: 58px; } .ptime { margin: 0 4px; font-size: 12px; } .stage.video .pctl { left: 6px; right: 6px; bottom: 6px; } }
+.pctl { position: relative; }
+/* Vorschau beim Spulen: folgt Maus/Finger ohne Verzögerung, erscheint mit kurzem Aufploppen */
+.ptip { position: absolute; left: 0; bottom: 100%; padding-bottom: 10px; pointer-events: none; will-change: transform; z-index: 3; }
+.ptip-in { display: grid; justify-items: center; gap: 6px; opacity: 0; transform: translateY(6px) scale(.94); transform-origin: 50% 100%;
+  transition: opacity .14s, transform .18s cubic-bezier(.2,.8,.2,1); }
+.ptip.on .ptip-in { opacity: 1; transform: none; }
+.ptip-img { display: none; border-radius: 10px; background-color: #000; background-repeat: no-repeat;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.92), 0 12px 32px rgba(0,0,0,.6); }
+.ptip.img .ptip-img { display: block; }
+.ptip span { font-size: 12.5px; font-variant-numeric: tabular-nums; padding: 3px 9px; border-radius: 999px; color: #fff;
+  background: rgba(16,16,22,.86); border: 1px solid rgba(255,255,255,.14); }
+@media (prefers-reduced-motion: reduce) { .ptip-in { transition: none; } }
+/* großer Knopf in der Mitte: Play bei Pause, Ring beim Laden */
+.pbig { all: unset; position: absolute; left: 50%; top: 50%; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; z-index: 1;
+  background: rgba(20,20,26,.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,.16); color: #fff;
+  opacity: 0; transform: scale(.8); pointer-events: none; transition: opacity .2s, transform .2s; }
+.pbig .i { width: 34px; height: 34px; margin-left: 3px; }
+.stage.video.paused .pbig { opacity: 1; transform: none; pointer-events: auto; }
+.stage.video.paused .pbig:hover { background: var(--accent); }
+.stage.wait:not(.paused)::after { content: ""; position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
+  border: 4px solid rgba(255,255,255,.25); border-top-color: var(--accent); animation: pspin .8s linear infinite; pointer-events: none; }
+@keyframes pspin { to { transform: rotate(360deg); } }
+.stage:fullscreen { width: 100vw; height: 100vh; display: grid; place-items: center; }
+.stage:fullscreen .media { width: 100%; height: 100%; }
+.stage:fullscreen .media video { width: 100%; height: 100%; max-height: none; object-fit: contain; }
+.stage:fullscreen.video .pctl { left: max(14px, 6vw); right: max(14px, 6vw); bottom: 18px; }
+@media (prefers-reduced-motion: reduce) { .pctl, .pbig, .pc, .rng::-webkit-slider-thumb { transition: none; } }
 .media .cover { width: 100%; aspect-ratio: 16/9; background: center/contain no-repeat; }
 .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 14px; }
 .album-grid .thumb { aspect-ratio: 3/4; border-radius: min(10px, var(--round)); cursor: pointer; }
@@ -333,9 +402,25 @@ body.dropping main { outline: 3px dashed var(--accent); outline-offset: -6px; bo
 <!-- ============ Player ============ -->
 <dialog id="playerDlg">
   <button class="close" id="closePlayer" aria-label="Schließen"><svg class="i"><use href="/static/icons.svg#x"/></svg></button>
-  <div class="media" id="media"></div>
+  <div class="stage" id="stage">
+    <div class="media" id="media"></div>
+    <button class="pbig" id="pBig" aria-label="Wiedergabe" tabindex="-1"><svg class="i"><use href="/static/icons.svg#play"/></svg></button>
+    <div class="pctl" id="pCtl" hidden>
+      <div class="ptip" id="pTip"><div class="ptip-in"><div class="ptip-img" id="pTipImg"></div><span id="pTipTime">0:00</span></div></div>
+      <input type="range" class="rng" id="pSeek" min="0" max="1000" value="0" step="1" aria-label="Position">
+      <div class="pctl-row">
+        <button class="pc" id="pPlay" aria-label="Wiedergabe" title="Wiedergabe (Leertaste)"><svg class="i"><use href="/static/icons.svg#play"/></svg></button>
+        <button class="pc" id="pMute" aria-label="Ton aus" title="Ton aus (M)"><svg class="i"><use href="/static/icons.svg#volume"/></svg></button>
+        <input type="range" class="rng vol" id="pVol" min="0" max="100" value="100" step="1" aria-label="Lautstärke">
+        <span class="ptime" id="pTime">0:00 / 0:00</span>
+        <span class="grow"></span>
+        <button class="pc" id="pFull" aria-label="Vollbild" title="Vollbild (F)"><svg class="i"><use href="/static/icons.svg#fullscreen"/></svg></button>
+      </div>
+    </div>
+  </div>
   <div class="dlg-body">
     <div class="ptop"><h2 id="pTitle"></h2>
+      <button class="btn" id="pAuto" aria-label="Automatisch weiter" title="Automatisch weiter (A)"><svg class="i"><use href="/static/icons.svg#playlist"/></svg></button>
       <button class="btn" id="pSpeed" aria-label="Geschwindigkeit" title="Geschwindigkeit (S)">1×</button>
       <button class="btn" id="pPip" aria-label="Bild-in-Bild" title="Bild-in-Bild (I)"><svg class="i"><use href="/static/icons.svg#pip"/></svg></button>
       <button class="btn" id="pPrev" aria-label="Vorheriges" title="Vorheriges (P)"><svg class="i"><use href="/static/icons.svg#back"/></svg></button>
@@ -537,6 +622,12 @@ body.dropping main { outline: 3px dashed var(--accent); outline-offset: -6px; bo
       <label>Von <input type="time" id="nStart"></label>
       <label>Bis <input type="time" id="nEnd"></label>
     </div>
+    <h2><svg class="i"><use href="/static/icons.svg#download"/></svg> Downloads</h2>
+    <div class="row">
+      <label>Tempolimit (MB/s) <input type="number" id="rateMb" min="0" max="1000" step="0.5"></label>
+      <label>Frei lassen (GB) <input type="number" id="minFree" min="0" step="1"></label>
+    </div>
+    <div class="hint">Tempolimit: 0 = volle Leitung, gilt pro Download. Sind weniger GB frei als angegeben, nimmt Kinbox keine neuen Downloads an (0 = aus).</div>
     <h2><svg class="i"><use href="/static/icons.svg#lock"/></svg> Cookies</h2>
     <div class="hint">Für Instagram, altersbeschränkte Videos und den YouTube-Bot-Check: im Browser einloggen, mit der Erweiterung „Get cookies.txt LOCALLY“ exportieren und hier hochladen. Mehrere Seiten nacheinander hochladen geht.</div>
     <div class="row"><span class="hint" id="cookieInfo"></span><label class="btn">cookies.txt hochladen<input type="file" id="cookieFile" accept=".txt,text/plain" hidden></label><button type="button" class="btn" id="cookieDel" hidden>Entfernen</button></div>
@@ -843,10 +934,135 @@ $("#aDownload").addEventListener("click", async () => {
 });
 $("#closeAlbum").addEventListener("click", () => $("#albumDlg").close());
 $("#albumDlg").addEventListener("click", (e) => { if (e.target === $("#albumDlg")) $("#albumDlg").close(); });
+// ------------------------------------------------------------------------
+// Eigene Player-Steuerung (statt der Browser-Leiste) + gemerkte Lautstärke
+// ------------------------------------------------------------------------
+let vol = parseFloat(store.get("kinbox_vol")); if (!(vol >= 0 && vol <= 1)) vol = 1;
+let muted = store.get("kinbox_muted") === "1";
+const clock = (s) => fmtDur(s) || "0:00";
+const setBtn = (b, icon, label, key) => { b.innerHTML = ic(icon); b.setAttribute("aria-label", label); b.title = key ? `${label} (${key})` : label; };
+function togglePlay() { const m = mediaEl(); if (m) m.paused ? m.play().catch(() => {}) : m.pause(); }
+function setVolume(v) { const m = mediaEl(); if (!m) return; m.volume = Math.max(0, Math.min(1, v)); m.muted = m.volume === 0; }
+function toggleMute() { const m = mediaEl(); if (!m) return; m.muted = !m.muted; if (!m.muted && !m.volume) m.volume = .5; }
+function toggleFull() {
+  const s = $("#stage"), v = $("#media video"); if (!v) return;
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (s.requestFullscreen) s.requestFullscreen().catch(() => v.webkitEnterFullscreen?.());
+  else v.webkitEnterFullscreen?.();      // iPhone kann nur das Video selbst im Vollbild zeigen
+}
+function drawVol(m) {
+  const off = m.muted || !m.volume, shown = off ? 0 : Math.round(m.volume * 100);
+  setBtn($("#pMute"), off ? "mute" : m.volume < .5 ? "volume-low" : "volume", off ? "Ton an" : "Ton aus", "M");
+  $("#pVol").value = shown; $("#pVol").style.setProperty("--p", shown + "%");
+}
+function drawTime(m, preview) {
+  const d = isFinite(m.duration) ? m.duration : 0, cur = preview ?? m.currentTime, seek = $("#pSeek");
+  if (preview == null && !seek.matches(":active")) seek.value = d ? Math.round(cur / d * 1000) : 0;
+  let b = 0; for (let i = 0; i < m.buffered.length; i++) if (m.buffered.start(i) <= m.currentTime + 1) b = Math.max(b, m.buffered.end(i));
+  seek.style.setProperty("--p", (d ? cur / d * 100 : 0) + "%"); seek.style.setProperty("--b", (d ? Math.min(b / d, 1) * 100 : 0) + "%");
+  $("#pTime").textContent = `${clock(cur)} / ${clock(d)}`;
+}
+// Leiste blendet sich bei laufendem Video nach kurzer Ruhe aus; Maus bewegen, tippen oder eine Taste holt sie zurück
+let idleT, overCtl = false, tapWoke = false;
+function wake() {
+  const s = $("#stage"), m = mediaEl();
+  s.classList.remove("idle"); clearTimeout(idleT);
+  if (m?.tagName === "VIDEO" && !m.paused) idleT = setTimeout(() => overCtl ? wake() : s.classList.add("idle"), 2600);
+}
+// Steuerung an das gerade geöffnete Video/Lied hängen (Listener enden mit mediaAC wie alle anderen)
+function bindControls(el, signal) {
+  const s = $("#stage");
+  clearTimeout(idleT); overCtl = false;
+  s.className = "stage" + (el ? (el.tagName === "VIDEO" ? " video paused" : " audio") : "");
+  $("#pCtl").hidden = !el; $("#pBig").hidden = el?.tagName !== "VIDEO"; $("#pFull").hidden = el?.tagName !== "VIDEO";
+  if (!el) return;
+  el.volume = vol; el.muted = muted;
+  const state = () => {
+    s.classList.toggle("paused", el.paused);
+    setBtn($("#pPlay"), el.paused ? "play" : "pause", el.paused ? "Wiedergabe" : "Pause", "Leertaste");
+    wake();
+  };
+  el.addEventListener("play", state, { signal }); el.addEventListener("pause", state, { signal });
+  for (const ev of ["timeupdate", "durationchange", "progress", "seeked", "loadedmetadata"]) el.addEventListener(ev, () => drawTime(el), { signal });
+  el.addEventListener("volumechange", () => {      // auch Taste M und Regler am Gerät – immer merken
+    vol = el.volume; muted = el.muted;
+    store.set("kinbox_vol", vol === 1 ? "" : String(Math.round(vol * 100) / 100)); store.set("kinbox_muted", muted ? "1" : "");
+    drawVol(el);
+  }, { signal });
+  for (const ev of ["waiting", "seeking", "loadstart"]) el.addEventListener(ev, () => s.classList.add("wait"), { signal });
+  for (const ev of ["playing", "canplay", "seeked", "error", "pause"]) el.addEventListener(ev, () => s.classList.remove("wait"), { signal });
+  if (el.tagName === "VIDEO") el.addEventListener("dblclick", toggleFull, { signal });
+  state(); drawVol(el); drawTime(el);
+}
+$("#pPlay").addEventListener("click", togglePlay);
+$("#pBig").addEventListener("click", togglePlay);
+$("#pMute").addEventListener("click", toggleMute);
+$("#pFull").addEventListener("click", toggleFull);
+$("#pVol").addEventListener("input", () => setVolume($("#pVol").value / 100));
+$("#pSeek").addEventListener("input", () => {
+  const m = mediaEl(); if (!m || !isFinite(m.duration)) return;
+  const to = $("#pSeek").value / 1000 * m.duration;
+  drawTime(m, to); m.currentTime = to;
+});
+// Vorschau beim Spulen (wie bei YouTube): der Server liefert pro Video ein Raster aus 60 Bildern; solange es noch
+// erzeugt wird (202), zeigt der Tooltip nur die Zeit. Bei Musik immer nur die Zeit.
+const STRIP = { n: 60, cols: 10 };
+let strip = null;      // { w, h } eines Einzelbilds für das offene Video
+function loadStrip(e, signal, tries = 0) {
+  if (!tries) { strip = null; $("#pTip").classList.remove("img", "on"); }
+  if (e.kind !== "video") return;
+  fetch(`/api/library/${e.id}/strip`, { headers: { "X-Token": token }, signal }).then(async (r) => {
+    if (r.status === 202) { if (tries < 80) setTimeout(() => signal.aborted || loadStrip(e, signal, tries + 1), 2500); return; }
+    if (!r.ok) return;
+    const url = URL.createObjectURL(await r.blob()), img = new Image();
+    signal.addEventListener("abort", () => URL.revokeObjectURL(url), { once: true });
+    img.onload = () => {
+      if (signal.aborted) return;
+      strip = { w: img.naturalWidth / STRIP.cols, h: img.naturalHeight / Math.ceil(STRIP.n / STRIP.cols) };
+      $("#pTipImg").style.backgroundImage = `url(${url})`;
+    };
+    img.src = url;
+  }).catch(() => {});
+}
+function showTip(f) {
+  const m = mediaEl(), tip = $("#pTip"); if (!m || !isFinite(m.duration) || !m.duration) return;
+  f = Math.max(0, Math.min(1, f));
+  $("#pTipTime").textContent = clock(f * m.duration);
+  if (strip) {
+    const k = innerWidth < 520 ? .7 : 1, w = strip.w * k, h = strip.h * k, i = Math.min(STRIP.n - 1, Math.round(f * STRIP.n)), box = $("#pTipImg").style;
+    box.width = w + "px"; box.height = h + "px";
+    box.backgroundSize = `${w * STRIP.cols}px ${h * Math.ceil(STRIP.n / STRIP.cols)}px`;
+    box.backgroundPosition = `-${(i % STRIP.cols) * w}px -${Math.floor(i / STRIP.cols) * h}px`;
+  }
+  tip.classList.toggle("img", !!strip);
+  const c = $("#pCtl").getBoundingClientRect(), r = $("#pSeek").getBoundingClientRect(), tw = tip.offsetWidth;
+  tip.style.transform = `translate3d(${Math.max(0, Math.min(c.width - tw, r.left - c.left + f * r.width - tw / 2))}px,0,0)`;
+  tip.classList.add("on");
+}
+const hideTip = () => $("#pTip").classList.remove("on");
+{
+  const seek = $("#pSeek"), frac = (ev) => { const r = seek.getBoundingClientRect(); return (ev.clientX - r.left) / r.width; };
+  seek.addEventListener("pointermove", (ev) => { if (ev.pointerType === "mouse") showTip(frac(ev)); });
+  seek.addEventListener("pointerdown", (ev) => showTip(frac(ev)));
+  seek.addEventListener("input", () => showTip(seek.value / 1000));          // Ziehen mit dem Finger, Tastatur
+  seek.addEventListener("pointerleave", (ev) => { if (ev.pointerType === "mouse") hideTip(); });
+  for (const name of ["change", "touchend", "blur"]) seek.addEventListener(name, hideTip);
+}
+$("#stage").addEventListener("pointermove", wake);
+$("#stage").addEventListener("pointerdown", (ev) => { tapWoke = ev.pointerType !== "mouse" && $("#stage").classList.contains("idle"); wake(); });
+$("#pCtl").addEventListener("pointerenter", (ev) => { overCtl = ev.pointerType === "mouse"; });
+$("#pCtl").addEventListener("pointerleave", () => { overCtl = false; });
+// Klick aufs Video = Play/Pause; am Handy holt der erste Tipp nur die Leiste zurück
+$("#media").addEventListener("click", (ev) => { if (ev.target.tagName === "VIDEO" && !tapWoke) togglePlay(); });
+document.addEventListener("fullscreenchange", () => {
+  const on = document.fullscreenElement === $("#stage");
+  setBtn($("#pFull"), on ? "fullscreen-exit" : "fullscreen", on ? "Vollbild beenden" : "Vollbild", "F");
+});
+
 function openPlayer(e) {
   if (!e) return;
   const src = fileUrl(e.id, "stream"), m = $("#media");
-  const cover = (x) => thumbOf(x) ? `<div class="cover" style="background-image:url('${esc(thumbOf(x))}')"></div>` : "";
+  const cover = (x) => thumbOf(x) ? `<div class="cover" style="background-image:url('${esc(thumbOf(x))}')"></div>` : `<div class="cover none">${ic("music")}</div>`;
   // Musik → Musik: dasselbe <audio> behalten und nur die Quelle tauschen – so läuft es im Hintergrund/Sperrbildschirm weiter
   const keep = e.kind === "audio" && current?.kind === "audio" && $("#playerDlg").open ? $("#media audio") : null;
   stopMedia(keep ? "keep" : "");
@@ -856,8 +1072,8 @@ function openPlayer(e) {
     m.querySelector(".cover")?.remove(); keep.insertAdjacentHTML("beforebegin", cover(e));
     keep.src = src; keep.play().catch(() => {});
   }
-  else if (e.kind === "video") m.innerHTML = `<video src="${esc(src)}" controls autoplay playsinline poster="${esc(thumbOf(e))}"></video>`;
-  else if (e.kind === "audio") m.innerHTML = `${cover(e)}<audio src="${esc(src)}" controls autoplay></audio>`;
+  else if (e.kind === "video") m.innerHTML = `<video src="${esc(src)}" autoplay playsinline poster="${esc(thumbOf(e))}"></video>`;
+  else if (e.kind === "audio") m.innerHTML = `${cover(e)}<audio src="${esc(src)}" autoplay></audio>`;
   else if (e.kind === "image" || e.kind === "gif") m.innerHTML = `<img src="${esc(src)}" alt="">`;
   else m.innerHTML = `<div style="padding:40px;color:#aaa">Keine Vorschau</div>`;
   const v = m.querySelector("video");
@@ -886,9 +1102,11 @@ function openPlayer(e) {
   }, { signal });
   el?.addEventListener("timeupdate", () => { if (Math.abs(el.currentTime - (pos[e.id] || 0)) >= 3) savePos(e, el); markChapter(el); }, { signal });
   el?.addEventListener("pause", () => savePos(e, el, true), { signal });
-  el?.addEventListener("ended", () => { savePos(e, null, true); const n = neighbor(1); if (e.kind === "audio" && n?.kind === "audio") openPlayer(n); }, { signal });
+  el?.addEventListener("ended", () => { savePos(e, null, true); const n = neighbor(1); if (n && n.kind !== "image" && (autoplay || (e.kind === "audio" && n.kind === "audio"))) openPlayer(n); }, { signal });
+  bindControls(el, signal);
+  loadStrip(e, signal);
   drawNav();
-  $("#pSpeed").hidden = !el; $("#pPip").hidden = !(v && document.pictureInPictureEnabled);
+  $("#pSpeed").hidden = $("#pAuto").hidden = !el; $("#pPip").hidden = !(v && document.pictureInPictureEnabled);
   if (el) setRate(v ? rate : 1, false);   // gemerktes Tempo nur für Videos – Musik startet normal
   loadExtras(e, el); setSession(e, el);
   if (!$("#playerDlg").open) $("#playerDlg").showModal();
@@ -936,6 +1154,16 @@ function setRate(r, remember = true) {
   $("#pSpeed").textContent = String(r).replace(".", ",") + "×";
   $("#pSpeed").classList.toggle("primary", r !== 1);
 }
+// „Automatisch weiter“: nach dem Ende das nächste Video/Lied der Liste starten (Musik → Musik lief schon immer weiter)
+let autoplay = store.get("kinbox_autoplay") === "1";
+$("#pAuto").classList.toggle("primary", autoplay);
+function toggleAuto() {
+  autoplay = !autoplay;
+  store.set("kinbox_autoplay", autoplay ? "1" : "");
+  $("#pAuto").classList.toggle("primary", autoplay);
+  toast(autoplay ? "Automatisch weiter: an" : "Automatisch weiter: aus");
+}
+$("#pAuto").addEventListener("click", toggleAuto);
 function nextRate() { const el = mediaEl(); if (el) setRate(RATES[(RATES.indexOf(el.playbackRate) + 1) % RATES.length]); }
 $("#pSpeed").addEventListener("click", nextRate);
 function togglePip() {
@@ -1040,7 +1268,8 @@ $("#pPrev").addEventListener("click", () => openPlayer(neighbor(-1)));
 $("#pNext").addEventListener("click", () => openPlayer(neighbor(1)));
 // Tasten: Leertaste/K Pause · ←/→ 5 s · J/L 10 s · M Ton · F Vollbild · S Tempo · C Untertitel · I Bild-in-Bild · N/P Nächstes/Vorheriges (Bilder: ←/→)
 $("#playerDlg").addEventListener("keydown", (ev) => {
-  if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest("input, select, textarea")) return;
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest("input:not([type=range]), select, textarea")) return;
+  wake();
   const m = mediaEl(), k = ev.key.length === 1 ? ev.key.toLowerCase() : ev.key;
   let n;
   if (k === "n" || (!m && k === "ArrowRight")) n = neighbor(1);
@@ -1050,11 +1279,13 @@ $("#playerDlg").addEventListener("keydown", (ev) => {
   else if (k === "k" || k === " ") m.paused ? m.play().catch(() => {}) : m.pause();
   else if (k === "ArrowLeft" || k === "j") m.currentTime = Math.max(0, m.currentTime - (k === "j" ? 10 : 5));
   else if (k === "ArrowRight" || k === "l") m.currentTime += k === "l" ? 10 : 5;
-  else if (k === "m") m.muted = !m.muted;
+  else if (k === "m") toggleMute();
+  else if (k === "ArrowUp" || k === "ArrowDown") setVolume((m.muted ? 0 : m.volume) + (k === "ArrowUp" ? .05 : -.05));
   else if (k === "s") nextRate();
   else if (k === "c") toggleSubs();
   else if (k === "i") togglePip();
-  else if (k === "f" && m.tagName === "VIDEO") document.fullscreenElement ? document.exitFullscreen() : m.requestFullscreen?.();
+  else if (k === "a") toggleAuto();
+  else if (k === "f" && m.tagName === "VIDEO") toggleFull();
   else return;
   ev.preventDefault();
   if (n) openPlayer(n);
@@ -1380,8 +1611,10 @@ async function openSettings(tab = "profile") {
       $("#nStart").value = p.night.start.padStart(5, "0");
       $("#nEnd").value = p.night.end.padStart(5, "0");
       $("#cookiesAll").checked = p.cookies_all !== false;
+      $("#rateMb").value = p.rate_limit_mb || 0;
+      $("#minFree").value = p.min_free_gb ?? 1;
       api("/api/cookies").then(showCookies).catch(() => {});
-      $("#srvInfo").innerHTML = `Kinbox ${esc(p.version)} · yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>`;
+      $("#srvInfo").innerHTML = `Kinbox ${esc(p.version)} · yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>${p.free >= 0 ? ` · <span>${esc(fmtBytes(p.free) || "0 B")} frei</span>` : ""}`;
     }
     if (!isAdmin && (tab === "family" || tab === "server")) tab = "profile";
     showTab(tab);
@@ -1453,7 +1686,7 @@ $("#cookieDel").addEventListener("click", async () => {
 });
 $("#srvForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  try { await api("/api/settings", { method: "POST", body: JSON.stringify({ night: { start: $("#nStart").value || "01:00", end: $("#nEnd").value || "07:00" }, cookies_all_profiles: $("#cookiesAll").checked }) }); toast("Gespeichert"); $("#setDlg").close(); }
+  try { await api("/api/settings", { method: "POST", body: JSON.stringify({ night: { start: $("#nStart").value || "01:00", end: $("#nEnd").value || "07:00" }, cookies_all_profiles: $("#cookiesAll").checked, rate_limit_mb: +$("#rateMb").value || 0, min_free_gb: +$("#minFree").value || 0 }) }); toast("Gespeichert"); $("#setDlg").close(); }
   catch (err) { toast(err.message, true); }
 });
 

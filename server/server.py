@@ -27,7 +27,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.19.0"
+APP_VERSION = "3.20.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -56,6 +56,8 @@ DEFAULT_SETTINGS = {
         ],
     },
     "keep_history": 200,
+    "rate_limit_mb": 0,               # Tempolimit für alle Downloads in MB/s (0 = volle Leitung)
+    "min_free_gb": 1,                 # sind weniger GB frei, werden keine neuen Downloads angenommen (0 = aus)
     "auto_retry": 2,                  # so oft wird ein fehlgeschlagener Download von selbst wiederholt (0 = aus)
     "auto_update_ytdlp": True,        # yt-dlp selbst aktualisieren, wenn eine Seite „plötzlich“ nicht mehr geht
     "cleanup": {                      # automatisches Aufräumen (in der Erweiterung umschaltbar)
@@ -406,11 +408,15 @@ def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: P
 
     # ---- Netzwerk ----------------------------------------------------------
     rate = (opts.get("rateLimit") or "").strip()
-    if rate:
-        if not RATE_RE.match(rate):
-            raise OptionError("Ungültiges Tempolimit (z. B. 5M oder 500K)")
-        a += ["-r", rate]
+    if rate and not RATE_RE.match(rate):
+        raise OptionError("Ungültiges Tempolimit (z. B. 5M oder 500K)")
+    cap = setting_num("rate_limit_mb", 0, hi=1000) * 1024 ** 2      # Limit des Admins gilt als Obergrenze für alle
+    if cap and (not rate or rate_bytes(rate) > cap):
+        rate = str(int(cap))
     frag = int(opts.get("concurrentFragments") or 4)
+    if rate:
+        a += ["-r", rate]
+        frag = 1            # das Limit gilt pro Verbindung – mit mehreren Teilen gleichzeitig wäre es ein Vielfaches
     a += ["-N", str(max(1, min(frag, 16)))]
     if opts.get("skipArchive"):
         a += ["--download-archive", str((archive_dir or download_root()) / "archive.txt")]
@@ -863,6 +869,11 @@ def run_job(job: Job):
 
 
 def _run_job(job: Job):
+    try:
+        check_space()       # auch für nachts geplante Aufträge und Abos, die erst später starten
+    except OptionError as e:
+        job.status, job.stage, job.error = "error", "Fehler", str(e)
+        return
     if job.options.get("edit"):
         return run_edit(job)
     owner = USERS.get(job.owner)
@@ -1338,7 +1349,7 @@ def lib_prune_missing() -> bool:
             return False   # ponytail: alles-oder-nichts; fällt nur ein Unterordner aus, wird trotzdem aufgeräumt
         for eid in gone:
             LIB.pop(eid, None)
-            for ext in (".jpg", ".none"):        # Vorschaubild gehört zum Eintrag
+            for ext in (".jpg", ".none", ".strip.jpg", ".strip.none"):        # Vorschaubild gehört zum Eintrag
                 try:
                     (THUMB_DIR / (eid + ext)).unlink(missing_ok=True)
                 except OSError:
@@ -1482,7 +1493,7 @@ def lib_delete(eid: str, reason: str = "") -> bool:
         _remove_empty_dirs(p)
         LIB.pop(eid, None)
         _PATH_INDEX.pop(_pkey(e["path"]), None)
-        for ext in (".jpg", ".none"):
+        for ext in (".jpg", ".none", ".strip.jpg", ".strip.none"):
             (THUMB_DIR / (eid + ext)).unlink(missing_ok=True)
         if reason:
             CLEANUP_LOG.appendleft({"time": time.time(), "name": e["name"], "size": e.get("size", 0),
@@ -1769,7 +1780,37 @@ def user_usage(uid: str) -> int:
         return sum(_esize(e) for e in LIB.values() if e.get("owner") == uid)
 
 
+def setting_num(key: str, default: float, hi: float = 1e6) -> float:
+    try:
+        return max(0.0, min(float(SETTINGS.get(key, default) or 0), hi))
+    except (TypeError, ValueError):
+        return default
+
+
+def rate_bytes(rate: str) -> float:
+    """„5M“ / „500K“ / „1000“ → Bytes pro Sekunde."""
+    unit = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3}.get(rate[-1:].upper())
+    return float(rate[:-1]) * unit if unit else float(rate)
+
+
+def free_space() -> int:
+    """Freier Platz auf der Platte des Download-Ordners in Bytes (-1 = unbekannt)."""
+    try:
+        return shutil.disk_usage(download_root()).free
+    except OSError:
+        return -1
+
+
+def check_space():
+    """Speicherplatz-Wächter: lieber gar nicht erst anfangen, als die Platte bis zum letzten Byte zu füllen."""
+    need, free = setting_num("min_free_gb", 1), free_space()
+    if need and 0 <= free < need * 1024 ** 3:
+        raise OptionError(f"Zu wenig Speicherplatz frei ({free / 1024 ** 3:.1f} GB) – in der Mediathek aufräumen "
+                          f"oder die Grenze in den Einstellungen senken")
+
+
 def check_quota(u: dict):
+    check_space()
     q = float(u.get("quota_gb") or 0)
     if q and user_usage(u["id"]) >= q * 1024 ** 3:
         raise OptionError(f"Dein Speicher ist voll ({q:g} GB). Lösche etwas in der Mediathek oder frag den Admin.")
@@ -2608,6 +2649,8 @@ def ping():
                    ffmpeg=cached("ffmpeg", has_ffmpeg), js_runtime=cached("js", js_runtime),
                    download_dir=str(user_root(u)) if not is_admin() else str(download_root()),
                    max_parallel=SETTINGS["max_parallel"],
+                   rate_limit_mb=setting_num("rate_limit_mb", 0, hi=1000), min_free_gb=setting_num("min_free_gb", 1),
+                   free=cached("free", free_space, 30),
                    cookies=bool(SETTINGS.get("cookies_file")),
                    cookies_all=SETTINGS.get("cookies_all_profiles", True) is not False,
                    user=user_public(u, private=True), is_admin=is_admin(),
@@ -3081,6 +3124,67 @@ def library_thumb(eid):
     return send_file(p, mimetype="image/jpeg", max_age=86400)
 
 
+# ---- Vorschau beim Spulen (wie bei YouTube): pro Video ein Raster aus STRIP_N kleinen Bildern, einmal erzeugt
+STRIP_N, STRIP_COLS, STRIP_PX = 60, 10, 200
+STRIP_LOCK = threading.Lock()          # immer nur ein Video gleichzeitig – ffmpeg liest dafür die ganze Datei
+STRIP_BUSY: set[str] = set()
+
+
+def strip_paths(eid: str) -> tuple[Path, Path]:
+    return THUMB_DIR / f"{eid}.strip.jpg", THUMB_DIR / f"{eid}.strip.none"
+
+
+def strip_make(e: dict) -> Path | None:
+    """Raster erzeugen (oder das fertige liefern); geht es nicht: <id>.strip.none, damit es nicht jedes Mal neu versucht wird."""
+    out, none = strip_paths(e["id"])
+    with STRIP_LOCK:
+        if out.exists() or none.exists():
+            return out if out.exists() else None
+        THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = THUMB_DIR / f"{e['id']}.strip.part.jpg"
+        try:
+            dur = float(e.get("duration") or 0) or probe(e["path"])["duration"]
+            if dur > 0:
+                rows = -(-STRIP_N // STRIP_COLS)
+                # lange Videos: nur Schlüsselbilder dekodieren – sonst rechnet ffmpeg an einem Film minutenlang
+                fast = ["-skip_frame", "nokey"] if dur > 120 else []
+                vf = (f"fps={STRIP_N / dur:.6f},scale=w={STRIP_PX}:h={STRIP_PX}:force_original_aspect_ratio=decrease"
+                      f":force_divisible_by=2,tile={STRIP_COLS}x{rows}")
+                run_tool([ffmpeg_bin("ffmpeg"), "-v", "error", "-nostdin", "-y"] + fast +
+                         ["-i", e["path"], "-an", "-sn", "-vf", vf, "-frames:v", "1", "-q:v", "5", str(tmp)], timeout=600)
+        except (OSError, subprocess.TimeoutExpired, ValueError, TypeError):
+            pass
+        if tmp.exists() and tmp.stat().st_size:
+            os.replace(tmp, out)
+            return out
+        tmp.unlink(missing_ok=True)
+        none.touch()
+        return None
+
+
+@app.get("/api/library/<eid>/strip")
+def library_strip(eid):
+    """200 = Raster (JPEG) · 202 = wird gerade erzeugt, gleich nochmal fragen · 404 = gibt es für diese Datei nicht."""
+    e = _entry(eid)
+    if e.get("kind") != "video":
+        abort(404)
+    out, none = strip_paths(eid)
+    if out.exists():
+        return send_file(out, mimetype="image/jpeg", max_age=86400)
+    if none.exists() or not os.path.exists(e["path"]):
+        abort(404)
+    if eid not in STRIP_BUSY:
+        STRIP_BUSY.add(eid)
+
+        def work(entry=dict(e)):
+            try:
+                strip_make(entry)
+            finally:
+                STRIP_BUSY.discard(eid)
+        threading.Thread(target=work, daemon=True).start()
+    return jsonify(pending=True), 202
+
+
 @app.get("/api/library/<eid>/download")
 def library_download(eid):
     e = _entry(eid)
@@ -3396,7 +3500,7 @@ def update_settings():
         with USERS_LOCK:
             u["cleanup"] = c
         users_save()
-    server_keys = {"max_parallel", "download_dir", "night", "cookies_all_profiles"} & set(body)
+    server_keys = {"max_parallel", "download_dir", "night", "cookies_all_profiles", "rate_limit_mb", "min_free_gb"} & set(body)
     if server_keys:
         need_admin()
         if "download_dir" in body and body["download_dir"] and not isinstance(body["download_dir"], str):
@@ -3426,6 +3530,13 @@ def update_settings():
                 if n["start"] == n["end"]:           # leeres Fenster: „nachts“-Aufträge liefen nie
                     return err("Start und Ende des Nachtfensters dürfen nicht gleich sein")
                 SETTINGS["night"] = n
+            for k, hi in (("rate_limit_mb", 1000), ("min_free_gb", 100000)):
+                if k in body:
+                    try:
+                        v = max(0.0, min(float(body[k] or 0), hi))
+                    except (TypeError, ValueError):
+                        return err(f"Ungültiger Wert für {k}")
+                    SETTINGS[k] = int(v) if v == int(v) else v
             if "cookies_all_profiles" in body:
                 SETTINGS["cookies_all_profiles"] = bool(body["cookies_all_profiles"])
                 INFO_CACHE.clear()

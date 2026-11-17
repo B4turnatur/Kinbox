@@ -234,6 +234,7 @@
     "Wiedergabe": "Play", "Pause": "Pause", "Wiedergabe (Leertaste)": "Play (Space)", "Pause (Leertaste)": "Pause (Space)",
     "Ton aus": "Mute", "Ton an": "Unmute", "Ton aus (M)": "Mute (M)", "Ton an (M)": "Unmute (M)", "Lautstärke": "Volume", "Position": "Position",
     "Vollbild": "Fullscreen", "Vollbild (F)": "Fullscreen (F)", "Vollbild beenden": "Exit fullscreen", "Vollbild beenden (F)": "Exit fullscreen (F)",
+    "Zoom zurücksetzen": "Reset zoom", "Zoom zurücksetzen (Z)": "Reset zoom (Z)",
     "Automatisch weiter": "Autoplay next", "Automatisch weiter (A)": "Autoplay next (A)", "Automatisch weiter: an": "Autoplay next: on",
     "Automatisch weiter: aus": "Autoplay next: off", "Tempolimit (MB/s)": "Speed limit (MB/s)", "Frei lassen (GB)": "Keep free (GB)",
     "Tempolimit: 0 = volle Leitung, gilt pro Download. Sind weniger GB frei als angegeben, nimmt Kinbox keine neuen Downloads an (0 = aus).": "Speed limit: 0 = full speed, applies per download. If less than this many GB are free, Kinbox accepts no new downloads (0 = off).",

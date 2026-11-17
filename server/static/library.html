@@ -86,8 +86,19 @@ dialog::backdrop { background: rgba(0,0,0,.7); backdrop-filter: blur(3px); }
 .media .cover.none .i { width: 60px; height: 60px; opacity: .9; }
 /* Eigene Player-Steuerung statt der Browser-Leiste: schwebende Glas-Leiste, Farben aus dem gewählten Design */
 .stage { position: relative; background: #000; color: #fff; overflow: hidden; }
-.stage.video .media video { cursor: pointer; }
+.stage.video .media video { cursor: pointer; transform-origin: 0 0; touch-action: pan-x pan-y; }
+/* Zoom (Mausrad / zwei Finger): gezoomt lässt sich das Bild verschieben */
+.stage.zoomed .media video, .stage:fullscreen .media video { touch-action: none; }
+.stage.zoomed .media video { cursor: grab; }
+.stage.zoomed .media video:active { cursor: grabbing; }
 .stage.idle .media video { cursor: none; }
+.pzoom { all: unset; position: absolute; top: 10px; left: 10px; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  font-size: 12.5px; font-variant-numeric: tabular-nums; color: #fff; background: rgba(16,16,22,.72); border: 1px solid rgba(255,255,255,.14);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: opacity .2s; }
+.pzoom .i { width: 14px; height: 14px; }
+.pzoom[hidden] { display: none; }
+.pzoom:hover, .pzoom:focus-visible { background: var(--accent); }
+.stage.idle .pzoom { opacity: 0; pointer-events: none; }
 .pctl { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 6px; border-radius: min(14px, var(--round)); border: 1px solid rgba(255,255,255,.13);
   background: rgba(16,16,22,.72); backdrop-filter: blur(22px) saturate(1.15); -webkit-backdrop-filter: blur(22px) saturate(1.15);
   box-shadow: 0 8px 30px rgba(0,0,0,.45); transition: opacity .25s, transform .25s; }
@@ -405,6 +416,7 @@ body.dropping main { outline: 3px dashed var(--accent); outline-offset: -6px; bo
   <button class="close" id="closePlayer" aria-label="Schließen"><svg class="i"><use href="/static/icons.svg#x"/></svg></button>
   <div class="stage" id="stage">
     <div class="media" id="media"></div>
+    <button class="pzoom" id="pZoom" hidden aria-label="Zoom zurücksetzen" title="Zoom zurücksetzen (Z)"><span id="pZoomVal">100 %</span><svg class="i"><use href="/static/icons.svg#x"/></svg></button>
     <button class="pbig" id="pBig" aria-label="Wiedergabe" tabindex="-1"><svg class="i"><use href="/static/icons.svg#play"/></svg></button>
     <div class="pctl" id="pCtl" hidden>
       <div class="ptip" id="pTip"><div class="ptip-in"><div class="ptip-img" id="pTipImg"></div><span id="pTipTime">0:00</span></div></div>
@@ -973,8 +985,8 @@ function wake() {
 // Steuerung an das gerade geöffnete Video/Lied hängen (Listener enden mit mediaAC wie alle anderen)
 function bindControls(el, signal) {
   const s = $("#stage");
-  clearTimeout(idleT); overCtl = false;
-  s.className = "stage" + (el ? (el.tagName === "VIDEO" ? " video paused" : " audio") : "");
+  clearTimeout(idleT); overCtl = false; zoomReset();
+  s.className = "stage" +(el ? (el.tagName === "VIDEO" ? " video paused" : " audio") : "");
   $("#pCtl").hidden = !el; $("#pBig").hidden = el?.tagName !== "VIDEO"; $("#pFull").hidden = el?.tagName !== "VIDEO";
   if (!el) return;
   el.volume = vol; el.muted = muted;
@@ -1054,8 +1066,65 @@ $("#stage").addEventListener("pointerdown", (ev) => { tapWoke = ev.pointerType !
 $("#pCtl").addEventListener("pointerenter", (ev) => { overCtl = ev.pointerType === "mouse"; });
 $("#pCtl").addEventListener("pointerleave", () => { overCtl = false; });
 // Klick aufs Video = Play/Pause; am Handy holt der erste Tipp nur die Leiste zurück
-$("#media").addEventListener("click", (ev) => { if (ev.target.tagName === "VIDEO" && !tapWoke) togglePlay(); });
+$("#media").addEventListener("click", (ev) => { if (ev.target.tagName === "VIDEO" && !tapWoke && !zMoved) togglePlay(); });
+// ------------------------------------------------------------------------
+// Zoom: Mausrad bzw. zwei Finger zoomen zur Stelle hin (1–6×), gezoomt per Ziehen verschieben
+// ------------------------------------------------------------------------
+let zs = 1, zx = 0, zy = 0, zMoved = false;
+const zPts = new Map();
+function zoomApply(v = $("#media video")) {
+  if (zs < 1.02) { zs = 1; zx = zy = 0; }
+  if (v) {
+    // am sichtbaren Bild begrenzen, nicht am Rahmen (Vollbild: schwarze Balken neben Hochkant-Videos)
+    const w = v.offsetWidth, h = v.offsetHeight, ar = v.videoWidth / v.videoHeight || w / h;
+    const fit = (z, box, pic) => {               // pic = Bildgröße im Rahmen, Rand = (box - pic) / 2
+      const o = (box - pic) / 2 * zs;
+      return pic * zs <= box ? (box - pic * zs) / 2 - o : Math.min(-o, Math.max(box - o - pic * zs, z));
+    };
+    zx = fit(zx, w, Math.min(w, h * ar)); zy = fit(zy, h, Math.min(h, w / ar));
+    v.style.transform = zs === 1 ? "" : `translate(${zx}px,${zy}px) scale(${zs})`;
+  }
+  $("#stage").classList.toggle("zoomed", zs > 1);
+  $("#pZoom").hidden = zs === 1; $("#pZoomVal").textContent = Math.round(zs * 100) + " %";
+}
+function zoomReset() { zs = 1; zPts.clear(); zoomApply(); }
+function zoomAt(v, cx, cy, s2) {      // Punkt unter Maus/Fingern bleibt stehen
+  const r = v.getBoundingClientRect(), px = (cx - r.left) / zs, py = (cy - r.top) / zs;
+  s2 = Math.min(6, Math.max(1, s2));
+  zx += cx - r.left - px * s2; zy += cy - r.top - py * s2; zs = s2; zoomApply(v);
+}
+$("#media").addEventListener("wheel", (ev) => {
+  const v = ev.target.closest("video"); if (!v || ev.ctrlKey) return;
+  if (ev.deltaY >= 0 && zs === 1) return;      // nicht gezoomt + nach unten: Fenster normal scrollen lassen
+  ev.preventDefault(); wake();
+  const d = Math.max(-300, Math.min(300, ev.deltaMode === 1 ? ev.deltaY * 33 : ev.deltaY));
+  zoomAt(v, ev.clientX, ev.clientY, zs * Math.exp(-d * .002));
+}, { passive: false });
+$("#media").addEventListener("pointerdown", (ev) => {
+  const v = ev.target.closest("video"); if (!v || ev.button > 0) return;
+  zMoved = false;
+  zPts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY });
+  if (zPts.size > 1 || zs > 1) try { v.setPointerCapture(ev.pointerId); } catch {}
+});
+$("#media").addEventListener("pointermove", (ev) => {
+  const p = zPts.get(ev.pointerId), v = $("#media video"); if (!p || !v) return;
+  if (zPts.size === 2) {                         // zwei Finger: Abstand = Zoom, Mitte = Verschieben
+    const o = [...zPts.values()].find((q) => q !== p), d0 = Math.hypot(p.x - o.x, p.y - o.y);
+    const mx = (p.x + o.x) / 2, my = (p.y + o.y) / 2;
+    if (d0 > 10) zoomAt(v, mx, my, zs * Math.hypot(ev.clientX - o.x, ev.clientY - o.y) / d0);
+    zx += (ev.clientX - p.x) / 2; zy += (ev.clientY - p.y) / 2; zoomApply(v);
+    zMoved = true;
+  } else if (zs > 1) {
+    zx += ev.clientX - p.x; zy += ev.clientY - p.y; zoomApply(v);
+    if (Math.hypot(ev.clientX - p.sx, ev.clientY - p.sy) > 5) zMoved = true;
+  }
+  p.x = ev.clientX; p.y = ev.clientY;
+});
+for (const name of ["pointerup", "pointercancel"]) $("#media").addEventListener(name, (ev) => zPts.delete(ev.pointerId));
+$("#pZoom").addEventListener("click", zoomReset);
+addEventListener("resize", () => zoomApply());     // nur begrenzen: Handy-Adressleiste löst beim Scrollen „resize“ aus
 document.addEventListener("fullscreenchange", () => {
+  zoomReset();
   const on = document.fullscreenElement === $("#stage");
   setBtn($("#pFull"), on ? "fullscreen-exit" : "fullscreen", on ? "Vollbild beenden" : "Vollbild", "F");
 });
@@ -1267,7 +1336,7 @@ function drawNav() {
 }
 $("#pPrev").addEventListener("click", () => openPlayer(neighbor(-1)));
 $("#pNext").addEventListener("click", () => openPlayer(neighbor(1)));
-// Tasten: Leertaste/K Pause · ←/→ 5 s · J/L 10 s · M Ton · F Vollbild · S Tempo · C Untertitel · I Bild-in-Bild · N/P Nächstes/Vorheriges (Bilder: ←/→)
+// Tasten: Leertaste/K Pause · ←/→ 5 s · J/L 10 s · M Ton · F Vollbild · Z Zoom zurück · S Tempo · C Untertitel · I Bild-in-Bild · N/P Nächstes/Vorheriges (Bilder: ←/→)
 $("#playerDlg").addEventListener("keydown", (ev) => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey || ev.target.closest("input:not([type=range]), select, textarea")) return;
   wake();
@@ -1287,6 +1356,7 @@ $("#playerDlg").addEventListener("keydown", (ev) => {
   else if (k === "i") togglePip();
   else if (k === "a") toggleAuto();
   else if (k === "f" && m.tagName === "VIDEO") toggleFull();
+  else if (k === "z" && zs > 1) zoomReset();
   else return;
   ev.preventDefault();
   if (n) openPlayer(n);

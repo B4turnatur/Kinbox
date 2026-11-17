@@ -178,7 +178,7 @@ Jede Person hat ihren **eigenen Bereich**: eigener Ordner, eigene Mediathek, eig
 
 | | |
 |---|---|
-| **Qualität** | Beste, 8K … 144p – mit Größenschätzung pro Stufe, 60 fps bevorzugen |
+| **Qualität** | Beste, 8K … 144p – mit Größenschätzung pro Stufe, 60 fps bevorzugen (die Auflösung geht immer vor – 60 fps und Codec entscheiden nur bei gleicher Auflösung) |
 | **Format** | MP4 / MKV / WebM / MOV, Codec H.264 (läuft überall), H.265, VP9, AV1 |
 | **Nur Audio** | MP3, M4A, Opus, FLAC, WAV, Original · Bitrate 96–320 kbps · Lautstärke angleichen |
 | **Zuschneiden** | Start/Ende per Regler, Eingabe oder „⏱ jetzt" (übernimmt die Position im laufenden Video). Framegenau oder schnell. |
@@ -215,7 +215,7 @@ Im Browser `http://<IP-des-Servers>:8765` öffnen (oder in der Erweiterung auf �
 - Alle Downloads mit Vorschaubild, Suche, Filter und Sortierung; direkt abspielen
 - **⬇ Auf dieses Gerät** lädt die Datei aufs Handy/den PC · **📌 Behalten** schützt vor dem Aufräumen
 - **Organisieren:** ⭐ Favoriten und eigene **Sammlungen** (z. B. „Kinderlieder“) – pro Person, auch mit geteilten Dateien der Familie; Dateien bleiben dabei, wo sie sind. **Umbenennen** (auf Wunsch samt Dateiname). **Auswählen** → mehrere Dateien auf einmal zur Sammlung, als Favorit, teilen, behalten, aufs Gerät laden oder löschen
-- **Player:** **Weiterschauen auf jedem Gerät** – am Handy anfangen, am PC an derselben Stelle weiter (pro Person). **Kapitel** zum Anspringen, **Untertitel** (im Video eingebettet oder als `.srt`/`.vtt` daneben – beim Herunterladen „Untertitel“ einschalten), Geschwindigkeit 0,5–2×, Bild-in-Bild, Steuerung vom Sperrbildschirm und per Kopfhörer. **Zoomen** mit dem Mausrad (am Handy mit zwei Fingern), gezoomtes Bild per Ziehen verschieben. Tasten: Leertaste Pause · ←/→ spulen · **S** Tempo · **C** Untertitel · **I** Bild-in-Bild · **F** Vollbild · **Z** Zoom zurück · **N**/**P** nächstes/vorheriges
+- **Player:** **Weiterschauen auf jedem Gerät** – am Handy anfangen, am PC an derselben Stelle weiter (pro Person). **Kapitel** zum Anspringen, **Untertitel** (im Video eingebettet oder als `.srt`/`.vtt` daneben – beim Herunterladen „Untertitel“ einschalten), Geschwindigkeit 0,5–2×, Bild-in-Bild, Steuerung vom Sperrbildschirm und per Kopfhörer. Zeigt die echte Auflösung der Datei (z. B. „1080p“) über dem Titel. **Zoomen** mit dem Mausrad (am Handy mit zwei Fingern), gezoomtes Bild per Ziehen verschieben. Tasten: Leertaste Pause · ←/→ spulen · **S** Tempo · **C** Untertitel · **I** Bild-in-Bild · **F** Vollbild · **Z** Zoom zurück · **N**/**P** nächstes/vorheriges
 - **＋ Link**: Link einfügen, Art wählen, fertig
 - Am Handy: „Zum Startbildschirm hinzufügen" – dann wirkt sie wie eine App
 

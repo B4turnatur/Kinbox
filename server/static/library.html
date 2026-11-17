@@ -1168,6 +1168,9 @@ function openPlayer(e) {
   // Alle Listener hängen an mediaAC – stopMedia() meldet sie ab (sonst sendet „pause“ beim Schließen die Position ein zweites Mal)
   el?.addEventListener("loadedmetadata", () => {
     if (!$("#editBox").hidden) setupRange();
+    // echte Auflösung der Datei zeigen (kürzere Seite, damit Hochkant-Videos auch „1080p“ heißen)
+    const px = Math.min(el.videoWidth || 0, el.videoHeight || 0);
+    if (px) $("#pMeta").prepend(`${px >= 4320 ? "8K" : px >= 2160 ? "4K" : px + "p"} · `);
     if (resume && resume < el.duration - 10) { el.currentTime = resume; toast(`Weiter bei ${fmtDur(resume)}`); }
   }, { signal });
   el?.addEventListener("timeupdate", () => { if (Math.abs(el.currentTime - (pos[e.id] || 0)) >= 3) savePos(e, el); markChapter(el); }, { signal });

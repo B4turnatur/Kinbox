@@ -27,7 +27,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.21.0"
+APP_VERSION = "3.21.1"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -121,9 +121,24 @@ SETTINGS_LOCK = threading.Lock()
 
 def ytdlp_base() -> list[str]:
     cmd = SETTINGS.get("ytdlp_command") or []
-    if cmd:
-        return list(cmd)
-    return [str(TOOLS_DIR / "yt-dlp.exe")] if FROZEN else [sys.executable, "-m", "yt_dlp"]
+    if not cmd:
+        cmd = [str(TOOLS_DIR / "yt-dlp.exe")] if FROZEN else [sys.executable, "-m", "yt_dlp"]
+    return list(cmd) + cached("js_args", js_runtime_args)
+
+
+def js_runtime_args() -> list[str]:
+    """yt-dlp nimmt von sich aus nur deno aus dem PATH. Ohne Laufzeit fehlen bei YouTube Formate –
+    deshalb eine anders gefundene Laufzeit (deno in ~/.deno, node, bun, quickjs) ausdrücklich angeben."""
+    extra = " ".join(str(x) for x in SETTINGS.get("extra_args") or [])
+    if "--js-runtimes" in extra or shutil.which("deno"):
+        return []
+    home_deno = Path.home() / ".deno" / "bin" / ("deno.exe" if IS_WINDOWS else "deno")
+    if home_deno.exists():
+        return ["--js-runtimes", f"deno:{home_deno}"]
+    for exe, name in (("node", "node"), ("bun", "bun"), ("qjs", "quickjs")):
+        if shutil.which(exe):
+            return ["--js-runtimes", name]
+    return []
 
 
 def gallerydl_base() -> list[str]:
@@ -292,15 +307,15 @@ def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: P
             raise OptionError("Unbekannter Video-Codec")
         if container not in CONTAINERS:
             raise OptionError("Unbekannter Container")
-        sort: list[str] = []
-        if q != "best":
-            if not q.isdigit():
-                raise OptionError("Ungültige Qualität")
-            sort.append(f"res:{int(q)}")
-        if opts.get("prefer60fps", True):
-            sort.append("fps")
+        # Reihenfolge = Vorrang (eigene -S-Felder stehen bei yt-dlp VOR dessen Standard „res“):
+        # Auflösung > gewählter Codec > 60 fps – sonst schlägt z. B. 720p60 ein 1440p30
+        if q != "best" and not q.isdigit():
+            raise OptionError("Ungültige Qualität")
+        sort: list[str] = ["res" if q == "best" else f"res:{int(q)}"]
         if VCODECS[vcodec]:
             sort.append(VCODECS[vcodec])
+        if opts.get("prefer60fps", True):
+            sort.append("fps")
         if container == "mp4":
             sort.append("acodec:m4a")  # AAC-Ton, spielt überall
         a += ["-f", f"bv*+{ba}/b"]

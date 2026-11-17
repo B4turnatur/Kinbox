@@ -27,7 +27,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.18.2"
+APP_VERSION = "3.19.0"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -56,6 +56,8 @@ DEFAULT_SETTINGS = {
         ],
     },
     "keep_history": 200,
+    "auto_retry": 2,                  # so oft wird ein fehlgeschlagener Download von selbst wiederholt (0 = aus)
+    "auto_update_ytdlp": True,        # yt-dlp selbst aktualisieren, wenn eine Seite „plötzlich“ nicht mehr geht
     "cleanup": {                      # automatisches Aufräumen (in der Erweiterung umschaltbar)
         "after_pc_download": False,   # nach dem Laden auf PC/Handy vom Server löschen
         "max_age_days": 0,            # 0 = aus, sonst nach X Tagen löschen
@@ -221,7 +223,7 @@ def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: P
         "-P", f"temp:{temp_dir or download_root() / '.tmp'}",
         "--progress-template", "download:@@P%(progress)j",
         "--progress-template", "postprocess:@@Q%(progress.status)s|%(progress.postprocessor)s",
-        "--print", "before_dl:@@I%(.{title,thumbnail,id,playlist_index,n_entries,extractor_key,uploader,duration,webpage_url,track})j",
+        "--print", "before_dl:@@I%(.{title,thumbnail,id,playlist_index,n_entries,extractor_key,uploader,duration,webpage_url,track,vcodec})j",
         "--print", "after_move:@@F%(filepath|)j",
         "--no-mtime",
     ]
@@ -519,7 +521,7 @@ def merge_cookies(old: str, new: str) -> str:
 class Job:
     PUBLIC = ("id", "url", "title", "thumbnail", "status", "stage", "percent", "speed",
               "eta", "downloaded", "total", "files", "error", "created", "finished",
-              "options", "item", "subfolder", "playlist_pos", "when", "owner")
+              "options", "item", "subfolder", "playlist_pos", "when", "owner", "resumed")
 
     def __init__(self, options: dict, owner: str = ""):
         self.id = uuid.uuid4().hex[:12]
@@ -546,6 +548,8 @@ class Job:
         self.log: deque[str] = deque(maxlen=300)
         self.proc: subprocess.Popen | None = None
         self.cancel_requested = False
+        self.slideshow = ""             # TikTok-Fotos hinter einem /video/-Link: Link für gallery-dl
+        self.resumed = 0                # 1 = lief beim letzten Beenden noch und wurde von selbst neu eingereiht
         self.meta: dict = {}                       # zuletzt gemeldete Video-Infos von yt-dlp
         self.file_meta: dict[str, dict] = {}       # Datei -> Video-Infos (für die Mediathek)
         self.lock = threading.Lock()               # Abbrechen vs. Prozessstart
@@ -579,7 +583,11 @@ class Job:
         for k in cls.PUBLIC:
             if k in d:
                 setattr(j, k, d[k])
-        if j.status == "running":
+        if j.status == "running" and not j.resumed:
+            # PC aus / Server neu gestartet: einmal von selbst weitermachen (yt-dlp setzt angefangene Dateien fort).
+            # Nur einmal – ein Auftrag, der den Server mitreißt, soll keine Endlosschleife ergeben.
+            j.resumed, j.status, j.stage, j.percent, j.speed, j.eta = 1, "queued", "Wartet", 0.0, None, None
+        elif j.status == "running":
             j.status, j.stage, j.error = "error", "Unterbrochen", "Server wurde neu gestartet"
         elif j.status in ("queued", "scheduled"):
             j.stage = "Wartet" if j.status == "queued" else "Geplant"
@@ -725,6 +733,128 @@ PP_NAMES = {
 }
 
 
+# ---- Fehler verstehen: nochmal versuchen? yt-dlp aktualisieren? Und was sagt man dem Menschen davor?
+ERR_KINDS = (     # Reihenfolge zählt – die erste passende Zeile gewinnt
+    ("post", r"postprocess|ffmpeg|ffprobe"),         # Umwandeln scheitert beim zweiten Mal genauso
+    ("novideo", r"unsupported url|there is no video|no video (could be|formats) found|no video in this|no media found"),
+    ("extractor", r"please report this issue|you are on the latest version|requested format is not available"),
+    ("disk", r"no space left|errno 28|disk quota|permission denied|errno 13"),
+    ("geo", r"geo[- ]?(restrict|block)|not available (in|from) your (country|region|location)|in your country"),
+    ("login", r"\blog ?in\b|\bsign ?in\b|login required|private|members[- ]only|--cookies|age[- ]restricted|confirm your age"
+              r"|not a bot|subscribers?[- ]only|premium|requires payment|registered users"),
+    ("rate", r"http error 429|too many requests|rate[- ]?limit"),
+    ("gone", r"unavailable|removed|deleted|does(n't| not) exist|no longer|terminated|http error 40[04]|(video|page) not found"
+             r"|copyright|\bdrm\b"),
+    ("extractor", r"unable to extract|nsig|signature|http error 403|failed to parse"),
+    ("network", r"timed? ?out|connection|network|temporary failure|name resolution|getaddrinfo|ssl|incompleteread"
+                r"|reset by peer|remote end closed|http error 5\d\d|unable to download"),
+)
+ERR_KINDS = tuple((k, re.compile(rx, re.I)) for k, rx in ERR_KINDS)
+ERR_FINAL = ("post", "novideo", "disk", "geo", "login", "gone")    # Wiederholen bringt hier nichts
+ERR_TEXT = {
+    "novideo": "Hier wurde nichts zum Herunterladen gefunden",
+    "extractor": "Die Seite hat etwas geändert – yt-dlp kommt damit gerade nicht klar",
+    "disk": "Kein Speicherplatz mehr oder kein Schreibzugriff auf den Download-Ordner",
+    "geo": "In deinem Land nicht verfügbar",
+    "login": "Privat oder nur mit Anmeldung sichtbar – Cookies hochladen hilft meistens",
+    "rate": "Die Seite bremst gerade (zu viele Anfragen) – später nochmal versuchen",
+    "gone": "Nicht (mehr) verfügbar – gelöscht, gesperrt oder der Link stimmt nicht",
+    "network": "Keine Verbindung zur Seite",
+}
+RETRY_WAITS = (5, 20, 60)        # Sekunden Pause vor Versuch 2, 3, 4 …
+
+
+def error_kind(msg: str) -> str:
+    return next((k for k, rx in ERR_KINDS if rx.search(msg or "")), "unknown")
+
+
+def explain(msg: str) -> str:
+    """yt-dlp-Meldung → verständlicher Satz, die Original-Meldung bleibt in Klammern dahinter."""
+    text = ERR_TEXT.get(error_kind(msg))
+    return f"{text} ({msg})" if text and msg else msg
+
+
+def retry_count() -> int:
+    try:
+        return max(0, min(int(SETTINGS.get("auto_retry", 2)), 5))
+    except (TypeError, ValueError):
+        return 2
+
+
+def _retry_wait(job: Job, nxt: int, tries: int, secs: float) -> bool:
+    """Pause vor dem nächsten Versuch – False, wenn in der Zeit abgebrochen wurde."""
+    job.percent, job.speed, job.eta = 0.0, None, None
+    job.stage = f"Neuer Versuch ({nxt}/{tries})"
+    job.log.append(f"--- {job.stage} in {secs:g} s ---")
+    end = time.time() + secs
+    while time.time() < end:
+        if job.cancel_requested:
+            return False
+        time.sleep(0.25)
+    return not job.cancel_requested
+
+
+def photo_link(url: str) -> str:
+    return url.replace("/video/", "/photo/", 1)
+
+
+def _read_ytdlp(job: Job, sound: dict | None, spot_photos: bool = False) -> tuple[int, str, int]:
+    """Ausgabe eines laufenden yt-dlp mitlesen → (Exit-Code, letzte Fehlermeldung, Anzahl Fehler).
+    spot_photos: TikTok-Slideshows gibt es auch unter /video/-Links – yt-dlp sieht dort nur die Musik („Video“ ohne
+    Bildspur). Dann sofort abbrechen und job.slideshow setzen, damit die Bilder geladen werden."""
+    last_error, n_err = "", 0
+    for raw in job.proc.stdout:
+        line = raw.decode("utf-8", "replace").rstrip("\r\n")
+        if not line:
+            continue
+        if line.startswith("@@P"):
+            _progress(job, line[3:])
+            continue
+        if line.startswith("@@Q"):
+            status, _, pp = line[3:].partition("|")
+            if status == "started":
+                job.stage = PP_NAMES.get(pp, pp)
+            continue
+        if line.startswith("@@I"):
+            try:
+                meta = json.loads(line[3:])
+                if sound:       # in der Mediathek als Song zeigen, nicht als das Video, aus dem die Tonspur stammt
+                    meta.update(title=meta.pop("track", None) or meta.get("title"), webpage_url=job.url,
+                                uploader=sound["artist"] or meta.get("uploader"), thumbnail=sound["cover"] or meta.get("thumbnail"))
+                    job.title = meta["title"] or job.title
+                meta.pop("track", None)
+                if meta.pop("vcodec", None) == "none" and spot_photos and not job.files:
+                    job.slideshow = photo_link(meta.get("webpage_url") or tiktok_full(job.url))
+                    kill_tree(job.proc)
+                    continue
+                job.meta = meta
+                if meta.get("title") and job.title == job.url:
+                    job.title = meta["title"]
+                if meta.get("thumbnail") and not job.thumbnail:
+                    job.thumbnail = meta["thumbnail"]
+                if meta.get("n_entries"):
+                    job.playlist_pos = f"{meta.get('playlist_index') or '?'}/{meta['n_entries']}"
+                job.stage = f"Lädt herunter ({job.playlist_pos})" if job.playlist_pos else "Lädt herunter"
+                job.percent = 0.0
+            except Exception:
+                pass
+            job.item += 1
+            continue
+        if line.startswith("@@F"):
+            try:
+                fp = json.loads(line[3:])
+                if fp and fp not in job.files:
+                    job.files.append(fp)
+                    job.file_meta[fp] = dict(job.meta)
+            except Exception:
+                pass
+            continue
+        job.log.append(line)
+        if line.startswith("ERROR:"):
+            last_error, n_err = line[6:].strip(), n_err + 1
+    return job.proc.wait(), last_error, n_err
+
+
 def run_job(job: Job):
     try:
         _run_job(job)
@@ -765,106 +895,85 @@ def _run_job(job: Job):
         return _cancelled(job, job_dir)
     if thumb_mode and (avatar := avatar_url(tiktok_full(job.url))):
         return run_photos(job, job_dir, url=avatar)
-    if job.options.get("mode") != "audio" and is_photo_post(job.url):
-        return run_photos(job, job_dir)
+    audio_mode = job.options.get("mode") == "audio"
+    if is_photo_post(job.url):      # TikTok-Slideshow: Bilder (+ Musik) – im Audio-Modus nur die Musik
+        return run_photos(job, job_dir, audio_only=audio_mode)
     cmd = ytdlp_base() + args
     job.log.append("$ " + " ".join(cmd))
 
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
-    try:
-        start_proc(job, cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
-    except OptionError:
-        return _cancelled(job, job_dir)
-    except OSError as e:
-        job.status, job.stage, job.error = "error", "Fehler", f"yt-dlp nicht gefunden: {e}"
-        return
-    job.stage = "Lädt Infos"
-    last_error = ""
-    for raw in job.proc.stdout:
-        line = raw.decode("utf-8", "replace").rstrip("\r\n")
-        if not line:
-            continue
-        if line.startswith("@@P"):
-            _progress(job, line[3:])
-            continue
-        if line.startswith("@@Q"):
-            status, _, pp = line[3:].partition("|")
-            if status == "started":
-                job.stage = PP_NAMES.get(pp, pp)
-            continue
-        if line.startswith("@@I"):
-            try:
-                meta = json.loads(line[3:])
-                if sound:       # in der Mediathek als Song zeigen, nicht als das Video, aus dem die Tonspur stammt
-                    meta.update(title=meta.pop("track", None) or meta.get("title"), webpage_url=job.url,
-                                uploader=sound["artist"] or meta.get("uploader"), thumbnail=sound["cover"] or meta.get("thumbnail"))
-                    job.title = meta["title"] or job.title
-                meta.pop("track", None)
-                job.meta = meta
-                if meta.get("title") and job.title == job.url:
-                    job.title = meta["title"]
-                if meta.get("thumbnail") and not job.thumbnail:
-                    job.thumbnail = meta["thumbnail"]
-                if meta.get("n_entries"):
-                    job.playlist_pos = f"{meta.get('playlist_index') or '?'}/{meta['n_entries']}"
-                job.stage = f"Lädt herunter ({job.playlist_pos})" if job.playlist_pos else "Lädt herunter"
-                job.percent = 0.0
-            except Exception:
-                pass
-            job.item += 1
-            continue
-        if line.startswith("@@F"):
-            try:
-                fp = json.loads(line[3:])
-                if fp and fp not in job.files:
-                    job.files.append(fp)
-                    job.file_meta[fp] = dict(job.meta)
-            except Exception:
-                pass
-            continue
-        job.log.append(line)
-        if line.startswith("ERROR:"):
-            last_error = line[6:].strip()
-    rc = job.proc.wait()
+    # Slideshow hinter /video/-Link erkennen – nur bei einem einzelnen Beitrag, nicht mitten in einem ganzen Profil
+    spot = _tiktok(job.url) and job.options.get("mode", "video") == "video" and job.options.get("playlist", "single") == "single"
+    tries, updated = 1 + retry_count(), False
+    rc, last_error, n_err = 1, "", 0
+    for n in range(1, tries + 1):
+        try:
+            start_proc(job, cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+        except OptionError:
+            return _cancelled(job, job_dir)
+        except OSError as e:
+            job.status, job.stage, job.error = "error", "Fehler", f"yt-dlp nicht gefunden: {e}"
+            return
+        job.stage = "Lädt Infos"
+        rc, last_error, n_err = _read_ytdlp(job, sound, spot_photos=spot)
+        if rc == 0 or job.cancel_requested or job.slideshow:
+            break
+        kind = error_kind(last_error)
+        if kind in ERR_FINAL or n == tries:
+            break
+        if kind == "extractor" and not updated:      # meist ist yt-dlp nur zu alt für die geänderte Seite
+            updated = True
+            job.stage = "Aktualisiert yt-dlp"
+            if ytdlp_autoupdate():
+                job.log.append("--- yt-dlp aktualisiert ---")
+        if not _retry_wait(job, n + 1, tries, RETRY_WAITS[min(n, len(RETRY_WAITS)) - 1] * (3 if kind == "rate" else 1)):
+            break
     if job.cancel_requested:
-        _cancelled(job, job_dir)
-    elif rc == 0:
-        if thumb_mode:
-            job.files = _collect_out(work_dir, job_dir, (".jpg", ".jpeg", ".png", ".webp"))
-            for f in job.files:
-                job.file_meta[f] = dict(job.meta)
-            if not job.files:
-                job.status, job.stage, job.error = "error", "Fehler", "Kein Vorschaubild gefunden"
-                return
-        audio_err = ""
-        if job.options.get("alsoAudio") and job.options.get("mode") == "video":
-            try:
-                also_audio(job)
-            except OptionError as e:
-                if job.cancel_requested:
-                    return _cancelled(job, job_dir)
-                audio_err = f"Audio-Datei: {e}"      # Video ist trotzdem fertig
-        conv = (job.options.get("convert") or {}).get("type", "none")
-        if conv in ("gif", "small"):
-            try:
-                convert_job_files(job, conv, job_dir)
-            except OptionError as e:
-                if job.cancel_requested:
-                    _cancelled(job, job_dir)
-                else:
-                    job.status, job.stage, job.error = "error", "Fehler", str(e)
-                return
-        job.status, job.stage, job.percent = "finished", "Fertig", 100.0
+        return _cancelled(job, job_dir)
+    if job.slideshow:
+        job.log.append("--- Foto-Beitrag erkannt ---")
+        return run_photos(job, job_dir, url=job.slideshow)
+    if thumb_mode:
+        job.files = _collect_out(work_dir, job_dir, (".jpg", ".jpeg", ".png", ".webp"))
         for f in job.files:
-            if Path(f).exists():
-                lib_add(f, job.file_meta.get(f) or job.meta, job)
-        if audio_err:
-            job.status, job.error = "error", audio_err
-    elif job.options.get("mode") != "audio" and not job.files and photo_site(job.url):
-        run_photos(job, job_dir, last_error)     # yt-dlp kann nur Videos – vielleicht ein Foto-Beitrag
-    else:
+            job.file_meta[f] = dict(job.meta)
+        if rc == 0 and not job.files:
+            job.status, job.stage, job.error = "error", "Fehler", "Kein Vorschaubild gefunden"
+            return
+    if rc != 0 and not any(os.path.exists(f) for f in job.files):
+        if not audio_mode and photo_site(job.url):
+            return run_photos(job, job_dir, explain(last_error))     # yt-dlp kann nur Videos – vielleicht ein Foto-Beitrag
         job.status, job.stage = "error", "Fehler"
-        job.error = last_error or f"yt-dlp beendet mit Code {rc}"
+        job.error = explain(last_error) or f"yt-dlp beendet mit Code {rc}"
+        return
+    # Ab hier ist mindestens eine Datei da. Meldet yt-dlp trotzdem einen Fehler (z. B. ein gelöschtes Video mitten in
+    # der Playlist), gilt der Auftrag als fertig – mit Hinweis statt „Fehler“ und leerer Mediathek.
+    audio_err = ""
+    if job.options.get("alsoAudio") and job.options.get("mode") == "video":
+        try:
+            also_audio(job)
+        except OptionError as e:
+            if job.cancel_requested:
+                return _cancelled(job, job_dir)
+            audio_err = f"Audio-Datei: {e}"      # Video ist trotzdem fertig
+    conv = (job.options.get("convert") or {}).get("type", "none")
+    if conv in ("gif", "small"):
+        try:
+            convert_job_files(job, conv, job_dir)
+        except OptionError as e:
+            if job.cancel_requested:
+                _cancelled(job, job_dir)
+            else:
+                job.status, job.stage, job.error = "error", "Fehler", str(e)
+            return
+    job.status, job.stage, job.percent = "finished", "Fertig", 100.0
+    for f in job.files:
+        if Path(f).exists():
+            lib_add(f, job.file_meta.get(f) or job.meta, job)
+    if audio_err:
+        job.status, job.error = "error", audio_err
+    elif rc != 0:
+        job.error = f"Fertig, aber nicht alles hat geklappt ({n_err or 1}×): {explain(last_error) or f'Code {rc}'}"
 
 
 def _collect_out(work: Path, job_dir: Path, exts) -> list[str]:
@@ -1085,7 +1194,7 @@ def _photo_meta(js: dict) -> dict:
     return {"title": title.splitlines()[0][:100] if title else "", "uploader": uploader}
 
 
-def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = ""):
+def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = "", audio_only: bool = False):
     out = download_root() / ".tmp" / job.id / "photos"
     try:
         ensure_gallerydl()
@@ -1120,6 +1229,12 @@ def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = ""):
     # .part = halb geladen (gallery-dl), beim Abbrechen nur die fertigen Bilder behalten
     media = sorted((f for f in out.glob("*") if f.is_file() and f.suffix.lower() not in (".json", ".part")),
                    key=lambda f: (kind_of(f.name) != "image", f.name)) if out.exists() else []
+    if audio_only:                  # Modus „Audio“ bei einer Slideshow: nur die Musik behalten
+        found, media = bool(media), [f for f in media if kind_of(f.name) == "audio"]
+        if found and not media and not cancelled:
+            job.status, job.stage = "error", "Fehler"
+            job.error = "Dieser Foto-Beitrag hat keine Musik – für die Bilder „Video“ oder „Bild“ wählen"
+            return
     if cancelled and not media:
         return _cancelled(job, job_dir)
     if not media:
@@ -2181,7 +2296,7 @@ def fetch_info(url: str, playlist: bool, user: dict | None = None) -> dict:
     if r.returncode != 0:
         err = r.stderr.decode("utf-8", "replace").strip().splitlines()
         msg = next((l[6:].strip() for l in reversed(err) if l.startswith("ERROR:")), err[-1] if err else "Unbekannter Fehler")
-        raise OptionError(msg)
+        raise OptionError(explain(msg))
     try:
         info = json.loads(r.stdout.decode("utf-8", "replace"))
     except ValueError:
@@ -2191,6 +2306,35 @@ def fetch_info(url: str, playlist: bool, user: dict | None = None) -> dict:
     for k in [k for k, (t, _) in list(INFO_CACHE.items()) if now - t >= 600]:   # sonst wächst der Cache endlos
         INFO_CACHE.pop(k, None)
     INFO_CACHE[key] = (now, out)
+    return out
+
+
+def photo_info(url: str, user: dict | None = None) -> dict | None:
+    """Foto-Beitrag schon in der Vorschau erkennen (gallery-dl listet nur auf, lädt nichts):
+    {type: photos, title, uploader, count, audio, thumbnail} – oder None, wenn dort keine Bilder sind."""
+    key = f"photos|{cookies_for(user)}|{url}"
+    hit = INFO_CACHE.get(key)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    try:
+        ensure_gallerydl()
+        with tempfile.TemporaryDirectory() as tmp:
+            r = run_tool(gallerydl_base() + cookie_args(Path(tmp), url, user) + ["-j", "--range", "1-60", "--", url],
+                         timeout=60, env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
+        msgs = json.loads(r.stdout.decode("utf-8", "replace") or "[]")
+    except (OptionError, OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    files = [m for m in msgs if isinstance(m, list) and len(m) >= 3 and m[0] == 3
+             and isinstance(m[1], str) and isinstance(m[2], dict)]
+    kinds = [kind_of("x." + str(m[2].get("extension") or "")) for m in files]
+    images = [m for m, k in zip(files, kinds) if k == "image"]
+    if not images:
+        return None
+    meta = next((pm for pm in map(_photo_meta, (m[2] for m in files)) if pm["title"]), None) or _photo_meta(images[0][2])
+    out = {"type": "photos", "title": meta["title"] or meta["uploader"] or "Foto-Beitrag", "uploader": meta["uploader"],
+           "count": len(images), "audio": "audio" in kinds, "webpage_url": url,
+           "thumbnail": images[0][1] if images[0][1].startswith("https://") else ""}
+    INFO_CACHE[key] = (time.time(), out)
     return out
 
 
@@ -2692,7 +2836,12 @@ def info():
                         thumbnail=snd["cover"] or data.get("thumbnail"), webpage_url=url, chapters=[], subtitles=[],
                         auto_subtitles=[], qualities=[])
             return jsonify(data)
+        if is_photo_post(url) and (photos := photo_info(url, me())):     # TikTok-Slideshow: yt-dlp gar nicht erst fragen
+            return jsonify(photos)
         data = dict(fetch_info(url, bool(body.get("playlist")), user=me()))
+        # TikTok-Slideshow hinter einem /video/-Link: yt-dlp findet nur die Musik (keine Bildspur)
+        if _tiktok(url) and data.get("type") == "video" and not data.get("qualities")                 and (photos := photo_info(photo_link(data.get("webpage_url") or tiktok_full(url)), me())):
+            return jsonify(photos)
         data["profile"] = bool(profile)
         if data.get("type") == "video" and data.get("id"):
             uid, roots = me()["id"], {}
@@ -2704,8 +2853,8 @@ def info():
     except OptionError as e:
         if profile:            # Videos des Profils nicht abrufbar (z. B. Instagram) – das Profilbild geht trotzdem
             return jsonify(type="profile", profile=True, title=profile.rstrip("/").split("/")[-2], error=str(e))
-        if photo_site(url):    # Foto-Beiträge kennt yt-dlp nicht – der Download klappt trotzdem (gallery-dl)
-            return err(f"Kein Video gefunden – Foto-Beitrag? Einfach „Herunterladen“ drücken, Kinbox lädt dann die Bilder. ({e})", 422)
+        if photo_site(url) and (photos := photo_info(url, me())):    # kein Video, aber Bilder → als Foto-Beitrag zeigen
+            return jsonify(photos)
         return err(str(e), 422)
     except subprocess.TimeoutExpired:
         return err("Zeitüberschreitung beim Abrufen der Infos", 504)
@@ -3291,20 +3440,48 @@ def update_settings():
 _update_lock = threading.Lock()
 
 
+def _update_tools() -> subprocess.CompletedProcess:
+    if SETTINGS.get("ytdlp_command") or FROZEN:
+        cmd = ytdlp_base() + ["-U"]
+    else:
+        cmd = [sys.executable, "-m", "pip", "install", "-U", "yt-dlp[default]", "gallery-dl"]
+    r = run_tool(cmd, timeout=300)
+    if FROZEN and (TOOLS_DIR / "gallery-dl.exe").exists():   # Foto-Beiträge
+        run_tool(gallerydl_base() + ["-U"], timeout=300)
+    return r
+
+
+_auto_update_at = 0.0
+
+
+def ytdlp_autoupdate() -> bool:
+    """Von einem Auftrag aus, dessen Fehler nach „Seite hat sich geändert“ aussieht: yt-dlp aktualisieren –
+    höchstens alle 12 Stunden. True, wenn danach eine andere Version da ist."""
+    global _auto_update_at
+    if SETTINGS.get("auto_update_ytdlp", True) is False or time.time() - _auto_update_at < 12 * 3600:
+        return False
+    if not _update_lock.acquire(blocking=False):
+        return False
+    try:
+        _auto_update_at = time.time()
+        before = ytdlp_version(wait=True)
+        try:
+            _update_tools()
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return ytdlp_version(wait=True) != before
+    finally:
+        _update_lock.release()
+
+
 @app.post("/api/update")
 def update_ytdlp():
     need_admin()
     if not _update_lock.acquire(blocking=False):
         return err("Update läuft bereits")
     try:
-        if SETTINGS.get("ytdlp_command") or FROZEN:
-            cmd = ytdlp_base() + ["-U"]
-        else:
-            cmd = [sys.executable, "-m", "pip", "install", "-U", "yt-dlp[default]", "gallery-dl"]
         try:
-            r = run_tool(cmd, timeout=300)
-            if FROZEN and (TOOLS_DIR / "gallery-dl.exe").exists():   # Foto-Beiträge
-                run_tool(gallerydl_base() + ["-U"], timeout=300)
+            r = _update_tools()
         except subprocess.TimeoutExpired:
             return err("Update hat zu lange gedauert", 504)
         except OSError as e:

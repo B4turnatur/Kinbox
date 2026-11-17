@@ -273,8 +273,11 @@ function showMedia({ title, sub = "", thumb = "", duration = null, error = "", l
 function showHint(d) {
   const el = $("#hint");
   el.textContent = "";
-  el.hidden = !(d?.sound || d?.profile);
+  el.hidden = !(d?.sound || d?.profile || d?.type === "photos");
   if (d?.sound) el.textContent = "TikTok-Sound – wird als Audio geladen (nur die Musik).";
+  else if (d?.type === "photos") el.textContent = d.audio
+    ? "Foto-Beitrag erkannt – Kinbox lädt alle Bilder und die Musik. Im Modus „Audio“ nur die Musik."
+    : "Foto-Beitrag erkannt – Kinbox lädt alle Bilder.";
   else if (d?.profile) {
     const b = document.createElement("button");
     b.className = "link";
@@ -323,9 +326,12 @@ async function loadInfo() {
   try {
     const data = await api("/api/info", { method: "POST", body: { url }, timeout: 90000, settings });
     if (seq !== infoSeq) return;
-    info = data.type === "profile" ? null : data;   // Profil ohne abrufbare Videos: nur das Profilbild anbieten
+    // Profil ohne abrufbare Videos: nur das Profilbild anbieten · Foto-Beitrag: keine Video-Infos (Qualität, Kapitel …)
+    info = data.type === "profile" || data.type === "photos" ? null : data;
     showHint(data);
-    if (data.type === "playlist") {
+    if (data.type === "photos") {
+      showMedia({ title: data.title, sub: `Foto-Beitrag · ${data.count} Bilder${data.uploader ? " · " + data.uploader : ""}`, thumb: data.thumbnail || prefill.thumbnail });
+    } else if (data.type === "playlist") {
       playlistMode = "all";
       showMedia({ title: data.title, sub: `Playlist · ${data.count} Videos${data.uploader ? " · " + data.uploader : ""}`, thumb: data.thumbnail || prefill.thumbnail });
     } else {

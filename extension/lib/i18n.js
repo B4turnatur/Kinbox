@@ -230,6 +230,11 @@
     "TikTok-Sound – wird als Audio geladen (nur die Musik).": "TikTok sound – will be saved as audio (music only).",
     "Das ist ein Profil.": "This is a profile.", "Nur das Profilbild laden": "Download only the profile picture",
     "Profil – die Videos sind hier nicht abrufbar.": "Profile – its videos can't be listed here.",
+    // ---- Selbstheilung: Wiederholen, Foto-Beitrag erkennen, verständliche Fehler
+    "Foto-Beitrag": "Photo post", "Aktualisiert yt-dlp": "Updating yt-dlp",
+    "Foto-Beitrag erkannt – Kinbox lädt alle Bilder und die Musik. Im Modus „Audio“ nur die Musik.": "Photo post detected – Kinbox downloads all images and the music. In “Audio” mode only the music.",
+    "Foto-Beitrag erkannt – Kinbox lädt alle Bilder.": "Photo post detected – Kinbox downloads all images.",
+    "Dieser Foto-Beitrag hat keine Musik – für die Bilder „Video“ oder „Bild“ wählen": "This photo post has no music – choose “Video” or “Image” for the pictures",
     "Zu diesem TikTok-Sound wurde kein Video gefunden – teile stattdessen ein Video mit dem Sound und wähle Audio → „TikTok: nur die Musik“.":
       "No video found for this TikTok sound – share a video that uses the sound instead and choose Audio → “TikTok: music only”.", "Ungültige Position": "Invalid position", "Angefangen": "Started",
     // ---- Abos (Kanäle/Playlists automatisch laden)
@@ -249,6 +254,16 @@
     ["Aus „{0}“ entfernt", "Removed from \"{0}\""], ["In „{0}“ gelegt", "Added to \"{0}\""], ["Profilbild {0}", "Profile picture {0}"],
     ["{0} – Instagram-Profilbilder gehen nur mit Instagram-Cookies", "{0} – Instagram profile pictures only work with Instagram cookies"],
     ["Eingerichtet für: {0}", "Set up for: {0}"],
+    ["Neuer Versuch ({0})", "Retrying ({0})"], ["Foto-Beitrag · {0} Bilder · {1}", "Photo post · {0} images · {1}"], ["Foto-Beitrag · {0} Bilder", "Photo post · {0} images"],
+    ["Fertig, aber nicht alles hat geklappt ({0}×): {1}", "Done, but not everything worked ({0}×): {1}"],
+    ["Hier wurde nichts zum Herunterladen gefunden ({0})", "Nothing to download was found here ({0})"],
+    ["Die Seite hat etwas geändert – yt-dlp kommt damit gerade nicht klar ({0})", "The site changed something – yt-dlp can't handle it right now ({0})"],
+    ["Kein Speicherplatz mehr oder kein Schreibzugriff auf den Download-Ordner ({0})", "No disk space left or no write access to the download folder ({0})"],
+    ["In deinem Land nicht verfügbar ({0})", "Not available in your country ({0})"],
+    ["Privat oder nur mit Anmeldung sichtbar – Cookies hochladen hilft meistens ({0})", "Private or only visible when signed in – uploading cookies usually helps ({0})"],
+    ["Die Seite bremst gerade (zu viele Anfragen) – später nochmal versuchen ({0})", "The site is throttling right now (too many requests) – try again later ({0})"],
+    ["Nicht (mehr) verfügbar – gelöscht, gesperrt oder der Link stimmt nicht ({0})", "Not available (any more) – deleted, blocked or the link is wrong ({0})"],
+    ["Keine Verbindung zur Seite ({0})", "No connection to the site ({0})"],
     ["Aufs Handy ({0})", "To phone ({0})"], ["Lädt herunter ({0})", "Downloading ({0})"], ["Lädt Fotos ({0})", "Downloading photos ({0})"], ["gallery-dl nicht gefunden: {0}", "gallery-dl not found: {0}"],
     ["Kein Video gefunden – Foto-Beitrag? Einfach „Herunterladen“ drücken, Kinbox lädt dann die Bilder. ({0})", "No video found – a photo post? Just press “Download”, Kinbox will fetch the images. ({0})"], ["Interner Fehler: {0}", "Internal error: {0}"], ["yt-dlp beendet mit Code {0}", "yt-dlp exited with code {0}"],
     ["Ungültige Zeitangabe: {0} (Format z. B. 1:23 oder 01:02:03)", "Invalid time: {0} (format e.g. 1:23 or 01:02:03)"],

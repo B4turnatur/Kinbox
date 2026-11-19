@@ -3,7 +3,7 @@ package io.github.b4turnatur.kinbox
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.DownloadManager
+import android.content.ContentValues
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -26,6 +26,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.MediaStore
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -48,6 +49,7 @@ import android.window.OnBackInvokedDispatcher
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLDecoder
@@ -368,23 +370,128 @@ object Box {
 
     // ---- Downloads aufs Handy, Benachrichtigungen ------------------------------
 
-    fun download(url: String, name: String) = main.post {
-        if (!url.startsWith("http")) return@post toast(app.getString(R.string.no_download))
-        val file = safeName(name)
-        val r = DownloadManager.Request(Uri.parse(url))
-            .setTitle(file)
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "Kinbox/$file")
-        // Typ aus der Endung – ältere Server schicken „octet-stream“, dann bot Android Wallet & Co. zum Öffnen an
-        MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.substringAfterLast('.', "").lowercase())?.let { r.setMimeType(it) }
-        try { app.getSystemService(DownloadManager::class.java).enqueue(r) } catch (_: Exception) { return@post toast(app.getString(R.string.no_download)) }
+    // Die App lädt selbst (nicht mehr über Androids DownloadManager): Samsungs DownloadManager blieb mit
+    // Kinbox endlos bei „wird heruntergeladen“ hängen (Galaxy S26 Ultra), ohne Fehler und ohne dass man sah,
+    // warum. Jetzt: eine Datei nach der anderen, gespeichert unter Downloads/Kinbox (MediaStore, ohne
+    // Berechtigung), bei Funkloch bis zu 12 Versuche mit Fortsetzen (Range + If-Match), Fehler im Klartext.
+    private val queue = ArrayDeque<Pair<String, String>>()
+    private var worker: Thread? = null
+    @Volatile private var loading = 0
+    fun busy() = polling || loading > 0
+
+    fun download(url: String, name: String) {
+        if (!url.startsWith("http")) { main.post { toast(app.getString(R.string.no_download)) }; return }
+        synchronized(this) {
+            loading++
+            queue.addLast(url to safeName(name))
+            if (worker == null) worker = thread { work() }
+        }
+        startWatch()
         // „Alle aufs Gerät“ lädt viele Dateien nacheinander – nicht für jede einen Hinweis stapeln
-        if (SystemClock.elapsedRealtime() - lastToast > 5000) { lastToast = SystemClock.elapsedRealtime(); toast(app.getString(R.string.saving)) }
+        main.post { if (SystemClock.elapsedRealtime() - lastToast > 5000) { lastToast = SystemClock.elapsedRealtime(); toast(app.getString(R.string.saving)) } }
     }
 
-    /** Dateiname fürs Handy. setDestinationInExternalPublicDir hängt ihn ungeprüft an eine file://-Adresse:
-     *  „#“ schnitt dort den Rest ab („Katze #shorts.mp4“ → „Katze “ ohne Endung), „%“ wurde umgedeutet.
-     *  Außerdem höchstens ~150 Byte (Android-Grenze 255, TikTok-Titel mit Emojis sprengten sie). */
+    private fun work() {
+        while (true) {
+            val (url, name) = synchronized(this) { queue.removeFirstOrNull() ?: run { worker = null; null } } ?: break
+            try { fetch(url, name) } catch (e: Exception) { notifyFile(name, null, e.message ?: e.javaClass.simpleName) }
+            synchronized(this) { loading-- }
+        }
+        stopIfIdle()
+    }
+
+    private fun fetch(url: String, name: String) {
+        val cr = app.contentResolver
+        // Typ aus der Endung – ältere Server schicken „octet-stream“, dann bot Android Wallet & Co. zum Öffnen an
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+        val item = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Kinbox")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }) ?: throw java.io.IOException(app.getString(R.string.no_download))
+        var done = 0L
+        var etag: String? = null
+        var tries = 0
+        var err: String? = null
+        while (true) {
+            try {
+                val c = URL(url).openConnection() as HttpURLConnection
+                c.connectTimeout = 15000; c.readTimeout = 60000
+                if (done > 0 && etag != null) { c.setRequestProperty("Range", "bytes=$done-"); c.setRequestProperty("If-Match", etag) }
+                val code = c.responseCode
+                if (code != 200 && code != 206) {
+                    err = "HTTP $code" + (c.errorStream?.bufferedReader()?.use { it.readText() }
+                        ?.let { Regex("\"error\"\\s*:\\s*\"([^\"]+)\"").find(it)?.groupValues?.get(1) }?.let { " – $it" } ?: "")
+                    if (code in 400..499) break else throw java.io.IOException(err)
+                }
+                if (code == 200) done = 0   // ganze Datei (z. B. älterer Server ohne Fortsetzen) → von vorn
+                etag = c.getHeaderField("ETag")
+                val total = c.contentLengthLong.let { if (it < 0) -1 else done + it }
+                cr.openFileDescriptor(item, "rw")!!.use { pfd ->
+                    FileOutputStream(pfd.fileDescriptor).use { out ->
+                        if (code == 200) out.channel.truncate(0)
+                        out.channel.position(done)
+                        c.inputStream.use { inp ->
+                            val buf = ByteArray(256 * 1024)
+                            var shown = 0L
+                            while (true) {
+                                val n = inp.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                                done += n
+                                if (SystemClock.elapsedRealtime() - shown > 700) { shown = SystemClock.elapsedRealtime(); progress(name, done, total, false) }
+                            }
+                        }
+                    }
+                }
+                if (total > 0 && done < total) throw java.io.IOException("unvollständig ($done/$total)")
+                err = null
+                break
+            } catch (e: java.io.IOException) {
+                err = e.message ?: e.javaClass.simpleName
+                if (++tries >= 12) break
+                progress(name, done, -1, true)
+                Thread.sleep(minOf(5000L * tries, 30000L))
+            }
+        }
+        if (err == null) {
+            cr.update(item, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+            notifyFile(name, item, null, mime)
+        } else {
+            cr.delete(item, null, null)
+            notifyFile(name, null, err)
+        }
+    }
+
+    private fun channel(id: String, name: Int, imp: Int) =
+        app.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(id, app.getString(name), imp))
+
+    private fun progress(name: String, done: Long, total: Long, retry: Boolean) {
+        channel("dl", R.string.channel_dl, NotificationManager.IMPORTANCE_LOW)
+        val pct = if (total > 0) (done * 100 / total).toInt() else 0
+        app.getSystemService(NotificationManager::class.java).notify(name.hashCode(), Notification.Builder(app, "dl")
+            .setSmallIcon(android.R.drawable.stat_sys_download).setContentTitle(name)
+            .setContentText(if (retry) app.getString(R.string.retrying) else if (total > 0) "$pct % · ${done / 1048576} / ${total / 1048576} MB" else "${done / 1048576} MB")
+            .setProgress(100, pct, total <= 0 && !retry).setOngoing(true).setOnlyAlertOnce(true).build())
+    }
+
+    /** Fertig (Tippen öffnet die Datei) oder Fehler mit Grund – ersetzt die Fortschrittsanzeige */
+    private fun notifyFile(name: String, item: Uri?, err: String?, mime: String = "") {
+        channel("done", R.string.channel, NotificationManager.IMPORTANCE_DEFAULT)
+        val open = if (item != null) Intent(Intent.ACTION_VIEW).setDataAndType(item, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                   else Intent(app, MainActivity::class.java)
+        app.getSystemService(NotificationManager::class.java).notify(name.hashCode(), Notification.Builder(app, "done")
+            .setSmallIcon(if (err == null) android.R.drawable.stat_sys_download_done else android.R.drawable.stat_notify_error)
+            .setContentTitle(app.getString(if (err == null) R.string.saved else R.string.save_failed))
+            .setContentText(if (err == null) name else "$name – $err")
+            .setStyle(Notification.BigTextStyle().bigText(if (err == null) name else "$name\n$err"))
+            .setContentIntent(PendingIntent.getActivity(app, name.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
+            .setAutoCancel(true).build())
+    }
+
+    /** Dateiname fürs Handy: ohne Zeichen, die Android/Dateisysteme stören („#“ schnitt beim alten Weg den Rest ab,
+     *  „Katze #shorts.mp4“ → „Katze “ ohne Endung), höchstens ~150 Byte (Grenze 255, Emoji-Titel sprengten sie). */
     fun safeName(name: String): String {
         val clean = name.replace(Regex("[\\\\/:*?\"<>|#%\\p{Cntrl}]"), "_").trim().trimStart('.')
         val dot = clean.lastIndexOf('.').takeIf { it > 0 && clean.length - it <= 6 } ?: clean.length
@@ -422,9 +529,7 @@ object Box {
     @Synchronized fun poll() {
         if (polling || !::app.isInitialized || tracked().length() == 0) return
         polling = true
-        main.post {   // geht nur, solange die App sichtbar ist – poll() kommt aus onResume bzw. vom Download-Knopf
-            try { app.startForegroundService(Intent(app, Watch::class.java)) } catch (_: Exception) { }
-        }
+        startWatch()
         thread {
             var fails = 0
             try {
@@ -437,10 +542,18 @@ object Box {
                 }
             } finally {
                 synchronized(this) { polling = false }
-                main.post { watch?.stopSelf() }
+                stopIfIdle()
             }
         }
     }
+
+    // Watch hält die App wach, solange gewartet oder geladen wird. Starten geht nur, solange die App sichtbar ist
+    // (Download-Knopf, onResume) – Auto-Downloads im Hintergrund kommen aus poll(), da läuft Watch schon.
+    private fun startWatch() = main.post {
+        if (watch == null) try { app.startForegroundService(Intent(app, Watch::class.java)) } catch (_: Exception) { }
+    }
+
+    private fun stopIfIdle() = main.post { if (!busy()) watch?.stopSelf() }
 
     /** true = es gibt noch verfolgte Aufträge, die gerade laden oder warten */
     private fun pollOnce(): Boolean {
@@ -512,7 +625,7 @@ class Watch : Service() {
         // startForeground immer zuerst – sonst beendet Android die App, selbst wenn es gleich wieder vorbei ist
         try { startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) } catch (_: Exception) { stopSelf(); return START_NOT_STICKY }
         Box.watch = this
-        if (!Box.polling) stopSelf()   // Warten war schon vorbei, bevor der Dienst lief
+        if (!Box.busy()) stopSelf()   // Warten/Laden war schon vorbei, bevor der Dienst lief
         return START_NOT_STICKY
     }
 

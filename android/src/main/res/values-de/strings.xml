@@ -17,5 +17,9 @@
     <string name="channel_watch">Warten auf Downloads</string>
     <string name="watching">Warte auf deinen Download …</string>
     <string name="watching_text">Kinbox speichert ihn aufs Handy, sobald er fertig ist.</string>
+    <string name="channel_dl">Aufs Handy laden</string>
+    <string name="saved">Aufs Handy gespeichert ✓</string>
+    <string name="save_failed">Speichern aufs Handy fehlgeschlagen</string>
+    <string name="retrying">Verbindung unterbrochen – neuer Versuch …</string>
     <string name="paste_long">Link aus der Zwischenablage laden</string>
 </resources>

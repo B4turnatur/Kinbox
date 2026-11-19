@@ -186,7 +186,7 @@ Shortcuts: **Alt+Shift+D** popup · **Alt+Shift+Q** download the current page ·
 2. Connect it: long-press your **invite link** (e.g. in WhatsApp) → **Share → Kinbox**. Or open the library on your phone → profile → **Set up Android app → Connect with the app**.
 3. From now on: in YouTube, TikTok, Instagram or the browser tap **Share → Kinbox**. You get the same options as in the extension – quality, audio, trimming with a preview player, chapters, presets, queue – and "To phone" saves the file to `Downloads/Kinbox`.
 
-Only works on the home Wi-Fi. You can switch straight back to YouTube & Co.: while a download is running, Kinbox keeps a quiet notification ("Waiting for your download …") and saves the file to the phone as soon as it is ready. If Wi-Fi drops for a moment, the transfer to the phone resumes where it stopped. Long-press the app icon → **From clipboard** to open a copied link in Kinbox.
+Only works on the home Wi-Fi. You can switch straight back to YouTube & Co.: while a download is running, Kinbox keeps a quiet notification ("Waiting for your download …") and saves the file to the phone as soon as it is ready. The app saves the file itself (with a progress bar in the notification); if Wi-Fi drops for a moment, it resumes where it stopped, and if saving really fails, the notification says why. Long-press the app icon → **From clipboard** to open a copied link in Kinbox.
 
 ## 👨‍👩‍👧 Family & profiles
 

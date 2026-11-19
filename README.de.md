@@ -152,7 +152,7 @@ python3 server/server.py
 2. Verbinden: den **Einladungslink** (z. B. in WhatsApp) lange drücken → **Teilen → Kinbox**. Oder am Handy die Mediathek öffnen → Profil → **Android-App einrichten → Mit der App verbinden**.
 3. Ab jetzt: in YouTube, TikTok, Instagram oder im Browser **Teilen → Kinbox**. Es gibt dieselben Optionen wie in der Erweiterung – Qualität, Audio, Zuschneiden mit Vorschau-Player, Kapitel, Presets, Warteschlange – und „Aufs Handy“ speichert die Datei unter `Downloads/Kinbox`.
 
-Nur im WLAN zu Hause nutzbar. Du kannst gleich zurück zu YouTube & Co.: Solange ein Download läuft, zeigt Kinbox eine leise Benachrichtigung („Warte auf deinen Download …“) und speichert die Datei aufs Handy, sobald sie fertig ist. Reißt das WLAN kurz ab, geht die Übertragung aufs Handy dort weiter, wo sie stand. Lange aufs App-Symbol tippen → **Aus Zwischenablage** öffnet einen kopierten Link in Kinbox.
+Nur im WLAN zu Hause nutzbar. Du kannst gleich zurück zu YouTube & Co.: Solange ein Download läuft, zeigt Kinbox eine leise Benachrichtigung („Warte auf deinen Download …“) und speichert die Datei aufs Handy, sobald sie fertig ist. Die App speichert die Datei selbst (mit Fortschrittsbalken in der Benachrichtigung); reißt das WLAN kurz ab, geht es dort weiter, wo es stand, und klappt das Speichern wirklich nicht, steht der Grund in der Benachrichtigung. Lange aufs App-Symbol tippen → **Aus Zwischenablage** öffnet einen kopierten Link in Kinbox.
 
 ## 👨‍👩‍👧 Familie & Profile
 

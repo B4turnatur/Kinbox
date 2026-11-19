@@ -14,5 +14,8 @@
     <string name="offline">Kinbox nicht erreichbar – WLAN/mobile Daten prüfen und ob der Server läuft.</string>
     <string name="no_link">Kein Link in der Zwischenablage.</string>
     <string name="paste_short">Aus Zwischenablage</string>
+    <string name="channel_watch">Warten auf Downloads</string>
+    <string name="watching">Warte auf deinen Download …</string>
+    <string name="watching_text">Kinbox speichert ihn aufs Handy, sobald er fertig ist.</string>
     <string name="paste_long">Link aus der Zwischenablage laden</string>
 </resources>

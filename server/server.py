@@ -27,7 +27,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.21.2"
+APP_VERSION = "3.21.3"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -1973,29 +1973,63 @@ def mime_of(path) -> str:
     return MIME_EXTRA.get(ext) or mimetypes.guess_type("x" + ext)[0] or "application/octet-stream"
 
 
+def _byte_range(header: str, size: int):
+    """„bytes=A-B“ / „bytes=A-“ / „bytes=-N“ → (start, ende) inkl.; None = ganze Datei, False = außerhalb (416)."""
+    m = re.fullmatch(r"\s*bytes=(\d*)-(\d*)\s*", header or "")
+    if not m or m.group(1) == m.group(2) == "":
+        return None   # fehlt, kaputt oder mehrere Bereiche → einfach ganz senden (erlaubt laut HTTP)
+    if m.group(1) == "":
+        n = int(m.group(2))
+        return (max(0, size - n), size - 1) if n else False
+    start = int(m.group(1))
+    end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+    return (start, end) if start < size and start <= end else False
+
+
 def stream_download(path: Path, on_complete=None) -> Response:
-    """Datei als Download senden; on_complete wird nur bei vollständiger Übertragung aufgerufen."""
+    """Datei als Download senden; on_complete wird nur aufgerufen, wenn das letzte Byte übertragen wurde.
+    Mit ETag + Range: Androids DownloadManager (und Browser) setzen nach Funkloch/Netzwechsel fort –
+    ohne das brach er bei großen Videos mit „can't resume“ ab."""
     from urllib.parse import quote
-    size = path.stat().st_size
-
-    def gen():
-        sent = 0
-        with open(path, "rb") as f:
-            while True:
-                chunk = f.read(1 << 20)
-                if not chunk:
-                    break
-                sent += len(chunk)
-                yield chunk
-        if on_complete and sent >= size:
-            on_complete()
-
+    st = path.stat()
+    size = st.st_size
+    etag = f'"{st.st_mtime_ns:x}-{size:x}"'
     ascii_name = re.sub(r'[^\x20-\x7e]|["\\]', "_", path.name)
     headers = {
-        "Content-Length": str(size),
+        "Accept-Ranges": "bytes",
+        "ETag": etag,
+        "Cache-Control": "no-store",
         "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(path.name)}",
     }
-    return Response(gen(), mimetype=mime_of(path), headers=headers, direct_passthrough=True)
+    match = request.headers.get("If-Match")
+    if match and match.strip() != "*" and etag not in [t.strip() for t in match.split(",")]:
+        return Response(status=412, headers=headers)   # Datei hat sich geändert → Teilstücke passen nicht mehr
+    rng = _byte_range(request.headers.get("Range", ""), size)
+    if rng is not None and request.headers.get("If-Range", etag).strip() != etag:
+        rng = None
+    if rng is False:
+        return Response(status=416, headers={**headers, "Content-Range": f"bytes */{size}"})
+    start, end = rng or (0, size - 1)
+    length = max(0, end - start + 1)
+
+    def gen():
+        left = length
+        with open(path, "rb") as f:
+            f.seek(start)
+            while left > 0:
+                chunk = f.read(min(1 << 20, left))
+                if not chunk:
+                    break
+                left -= len(chunk)
+                yield chunk
+        if on_complete and left <= 0 and start + length >= size:
+            on_complete()
+
+    headers["Content-Length"] = str(length)
+    if rng:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return Response(gen(), status=206 if rng else 200, mimetype=mime_of(path), headers=headers,
+                    direct_passthrough=True)
 
 
 # --------------------------------------------------------------------------- #

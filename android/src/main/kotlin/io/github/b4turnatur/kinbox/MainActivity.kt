@@ -8,12 +8,14 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.Service
 import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
@@ -21,6 +23,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
+import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
@@ -339,7 +342,6 @@ object Box {
     private lateinit var app: Context
     private lateinit var prefs: SharedPreferences
     private val main = Handler(Looper.getMainLooper())
-    private var polling = false
     private var lastToast = 0L
 
     fun init(c: Context) {
@@ -368,7 +370,7 @@ object Box {
 
     fun download(url: String, name: String) = main.post {
         if (!url.startsWith("http")) return@post toast(app.getString(R.string.no_download))
-        val file = name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+        val file = safeName(name)
         val r = DownloadManager.Request(Uri.parse(url))
             .setTitle(file)
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
@@ -378,6 +380,19 @@ object Box {
         try { app.getSystemService(DownloadManager::class.java).enqueue(r) } catch (_: Exception) { return@post toast(app.getString(R.string.no_download)) }
         // „Alle aufs Gerät“ lädt viele Dateien nacheinander – nicht für jede einen Hinweis stapeln
         if (SystemClock.elapsedRealtime() - lastToast > 5000) { lastToast = SystemClock.elapsedRealtime(); toast(app.getString(R.string.saving)) }
+    }
+
+    /** Dateiname fürs Handy. setDestinationInExternalPublicDir hängt ihn ungeprüft an eine file://-Adresse:
+     *  „#“ schnitt dort den Rest ab („Katze #shorts.mp4“ → „Katze “ ohne Endung), „%“ wurde umgedeutet.
+     *  Außerdem höchstens ~150 Byte (Android-Grenze 255, TikTok-Titel mit Emojis sprengten sie). */
+    fun safeName(name: String): String {
+        val clean = name.replace(Regex("[\\\\/:*?\"<>|#%\\p{Cntrl}]"), "_").trim().trimStart('.')
+        val dot = clean.lastIndexOf('.').takeIf { it > 0 && clean.length - it <= 6 } ?: clean.length
+        var base = clean.substring(0, dot).trimEnd()
+        val ext = clean.substring(dot)
+        while (base.isNotEmpty() && (base + ext).toByteArray().size > 150)
+            base = base.dropLast(if (base.length >= 2 && base[base.length - 1].isLowSurrogate()) 2 else 1)
+        return base.trimEnd().ifEmpty { "Kinbox" } + ext
     }
 
     private fun toast(s: String) = Toast.makeText(app, s, Toast.LENGTH_LONG).show()
@@ -392,8 +407,12 @@ object Box {
     }
 
     // Aufträge verfolgen, bis sie fertig sind: dann Benachrichtigung und ggf. aufs Handy laden.
-    // ponytail: läuft nur, solange der App-Prozess lebt (auch im Hintergrund) – für „nachts laden" später WorkManager.
+    // Solange das läuft, hält der Dienst Watch die App wach – ohne ihn friert Android (ab 14) die App wenige
+    // Sekunden nach dem Wechsel zurück zu YouTube & Co. ein, und der Download kam erst beim nächsten Öffnen.
+    // Nur für Aufträge, die gerade laden/warten – „nachts laden“ holt die App beim nächsten Öffnen ab.
     private fun tracked() = JSONObject(prefs.getString("tracked", null) ?: "{}")
+    @Volatile var polling = false; private set
+    var watch: Watch? = null
 
     @Synchronized fun track(id: String, save: Boolean) {
         prefs.edit().putString("tracked", tracked().put(id, save).toString()).apply()
@@ -403,18 +422,28 @@ object Box {
     @Synchronized fun poll() {
         if (polling || !::app.isInitialized || tracked().length() == 0) return
         polling = true
+        main.post {   // geht nur, solange die App sichtbar ist – poll() kommt aus onResume bzw. vom Download-Knopf
+            try { app.startForegroundService(Intent(app, Watch::class.java)) } catch (_: Exception) { }
+        }
         thread {
             var fails = 0
-            while (fails < 40) {   // Server ~5 min nicht erreichbar → aufgeben; beim nächsten Öffnen der App geht es weiter
-                fails = try { pollOnce(); 0 } catch (_: Exception) { fails + 1 }
-                synchronized(this) { if (tracked().length() == 0) { polling = false; return@thread } }
-                Thread.sleep(if (fails == 0) 3000 else 8000)
+            try {
+                while (fails < 40) {   // Server ~5 min nicht erreichbar → aufgeben; beim nächsten Öffnen der App geht es weiter
+                    var active = true
+                    fails = try { active = pollOnce(); 0 } catch (_: Exception) { fails + 1 }
+                    synchronized(this) { if (tracked().length() == 0) return@thread }
+                    if (!active) return@thread   // nur noch Nacht-Aufträge
+                    Thread.sleep(if (fails == 0) 3000 else 8000)
+                }
+            } finally {
+                synchronized(this) { polling = false }
+                main.post { watch?.stopSelf() }
             }
-            synchronized(this) { polling = false }
         }
     }
 
-    private fun pollOnce() {
+    /** true = es gibt noch verfolgte Aufträge, die gerade laden oder warten */
+    private fun pollOnce(): Boolean {
         val before = synchronized(this) { tracked().keys().asSequence().toSet() }   // was während der Abfrage dazukommt, bleibt
         val jobs = try { jobs() } catch (e: Exception) {
             if (url("serverUrl2").isEmpty()) throw e
@@ -422,6 +451,7 @@ object Box {
             jobs()
         }
         val notifyOn = store().optBoolean("notify", true)
+        var active = false
         synchronized(this) {
             val t = tracked()
             val seen = HashSet<String>()
@@ -442,14 +472,18 @@ object Box {
                     }
                     "error" -> if (notifyOn) main.post { notify(app.getString(R.string.failed), title) }
                     "cancelled" -> {}
-                    else -> continue
+                    "scheduled" -> continue
+                    else -> { active = true; continue }
                 }
                 t.remove(id)
             }
             // Auftrag woanders gelöscht/aufgeräumt (oder anderer Server/Token) → nicht ewig weiter abfragen
             (before - seen).forEach { t.remove(it) }
+            // erst während dieser Abfrage dazugekommen → noch nicht gesehen, aber natürlich aktiv
+            if (t.keys().asSequence().any { it !in before }) active = true
             prefs.edit().putString("tracked", t.toString()).apply()
         }
+        return active
     }
 
     private fun jobs(): JSONArray {
@@ -461,4 +495,31 @@ object Box {
     }
 
     private fun enc(s: String) = MainActivity.enc(s)
+}
+
+/** Hält die App wach, solange Box auf fertige Aufträge wartet (sichtbar als leise Benachrichtigung). */
+class Watch : Service() {
+    override fun onBind(i: Intent?): IBinder? = null
+
+    override fun onStartCommand(i: Intent?, flags: Int, startId: Int): Int {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("watch", getString(R.string.channel_watch), NotificationManager.IMPORTANCE_LOW))
+        val tap = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val n = Notification.Builder(this, "watch")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle(getString(R.string.watching)).setContentText(getString(R.string.watching_text))
+            .setContentIntent(tap).setOngoing(true).build()
+        // startForeground immer zuerst – sonst beendet Android die App, selbst wenn es gleich wieder vorbei ist
+        try { startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC) } catch (_: Exception) { stopSelf(); return START_NOT_STICKY }
+        Box.watch = this
+        if (!Box.polling) stopSelf()   // Warten war schon vorbei, bevor der Dienst lief
+        return START_NOT_STICKY
+    }
+
+    override fun onTimeout(startId: Int, type: Int) = stopSelf()   // Android 15+: höchstens 6 h am Tag
+
+    override fun onDestroy() {
+        if (Box.watch === this) Box.watch = null
+        super.onDestroy()
+    }
 }

@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Wartet im Hintergrund auf fertige Aufträge, sonst friert Android die App ein (Box.poll / Watch) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- Kinbox läuft im Heimnetz über http:// – daher Klartext erlaubt -->
     <application
@@ -34,5 +37,6 @@
                 <data android:scheme="kinbox" android:host="setup" />
             </intent-filter>
         </activity>
+        <service android:name=".Watch" android:exported="false" android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

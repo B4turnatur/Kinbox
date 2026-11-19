@@ -15,5 +15,8 @@
     <string name="offline">Kinbox not reachable – check Wi-Fi/mobile data and whether the server is running.</string>
     <string name="no_link">No link in the clipboard.</string>
     <string name="paste_short">From clipboard</string>
+    <string name="channel_watch">Waiting for downloads</string>
+    <string name="watching">Waiting for your download …</string>
+    <string name="watching_text">Kinbox will save it to the phone when it is ready.</string>
     <string name="paste_long">Download link from clipboard</string>
 </resources>

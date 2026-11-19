@@ -27,7 +27,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, g, jsonify, request, send_file
 
-APP_VERSION = "3.21.3"
+APP_VERSION = "3.21.4"
 FROZEN = getattr(sys, "frozen", False)   # Kinbox.exe (PyInstaller)
 BASE_DIR = Path(sys.executable).parent if FROZEN else Path(__file__).resolve().parent
 TOOLS_DIR = BASE_DIR / "tools"            # nur Kinbox.exe: yt-dlp, ffmpeg, deno
@@ -1988,25 +1988,23 @@ def _byte_range(header: str, size: int):
 
 def stream_download(path: Path, on_complete=None) -> Response:
     """Datei als Download senden; on_complete wird nur aufgerufen, wenn das letzte Byte übertragen wurde.
-    Mit ETag + Range: Androids DownloadManager (und Browser) setzen nach Funkloch/Netzwechsel fort –
-    ohne das brach er bei großen Videos mit „can't resume“ ab."""
+    Fortsetzen nach Funkloch/Netzwechsel: Androids DownloadManager merkt sich das ETag und fragt dann mit
+    „Range“ + „If-Match“ nach dem Rest – ohne das brach er bei großen Videos mit „can't resume“ ab.
+    Bewusst KEIN „Accept-Ranges“ und keine Teilstücke ohne If-Match: Samsungs DownloadManager lädt sonst in
+    mehreren Teilen gleichzeitig und blieb dabei endlos hängen (3.21.3, Galaxy S26 Ultra)."""
     from urllib.parse import quote
     st = path.stat()
     size = st.st_size
     etag = f'"{st.st_mtime_ns:x}-{size:x}"'
     ascii_name = re.sub(r'[^\x20-\x7e]|["\\]', "_", path.name)
     headers = {
-        "Accept-Ranges": "bytes",
         "ETag": etag,
-        "Cache-Control": "no-store",
         "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(path.name)}",
     }
-    match = request.headers.get("If-Match")
-    if match and match.strip() != "*" and etag not in [t.strip() for t in match.split(",")]:
+    match = (request.headers.get("If-Match") or "").strip()
+    if match and match != "*" and etag not in [t.strip() for t in match.split(",")]:
         return Response(status=412, headers=headers)   # Datei hat sich geändert → Teilstücke passen nicht mehr
-    rng = _byte_range(request.headers.get("Range", ""), size)
-    if rng is not None and request.headers.get("If-Range", etag).strip() != etag:
-        rng = None
+    rng = _byte_range(request.headers.get("Range", ""), size) if match else None
     if rng is False:
         return Response(status=416, headers={**headers, "Content-Range": f"bytes */{size}"})
     start, end = rng or (0, size - 1)

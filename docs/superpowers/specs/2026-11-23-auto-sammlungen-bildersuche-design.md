@@ -2,6 +2,8 @@
 
 Stand: 2026-11-23 · Ziel-Versionen: Teil 1 = 3.22.0, Teil 2 = 3.23.0
 
+> **Teil 1 umgesetzt (3.22.0). Teil 2 (KI-Bildersuche) am 2026-11-23 vom Nutzer verworfen – nicht bauen.** Gründe: Modell ~606 MB + ~1 GB RAM fürs NAS, versteht vor allem Englisch; Hashtags + Auto-Sammlungen reichen.
+
 ## Warum
 Der Nutzer hat z. B. viele GTA-Videos. Er möchte sie wiederfinden („gta“ suchen) und gesammelt an einem Ort sehen („wie ein Unterordner GTA“), **ohne dass „GTA“ im Titel stehen muss**. Bei seinen Videos steht „GTA“ meist in Hashtags/Beschreibung/Kanal – das wertet Kinbox heute nicht aus (yt-dlp liefert es, Kinbox wirft es weg). Für Videos ganz ohne passenden Text: Bildersuche wie Immich („Smart Search“ mit CLIP).
 

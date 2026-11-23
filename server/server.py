@@ -3600,6 +3600,91 @@ def coll_auto(e: dict) -> None:
         users_save()
 
 
+# Alte Einträge: Hashtags einmal nachladen (yt-dlp ohne Download, langsam nacheinander – sonst sperrt YouTube)
+REFRESH = {"running": False, "done": 0, "total": 0, "failed": 0, "stop": False}
+REFRESH_WAIT = 2.5
+
+
+def _refresh_todo() -> dict[str, list[dict]]:
+    """Link → Einträge (Video + MP3 vom selben Link = ein Aufruf). Ohne Link/Foto-Album: nichts abzufragen."""
+    out: dict[str, list[dict]] = {}
+    with LIB_LOCK:
+        for e in LIB.values():
+            url = str(e.get("url") or "")
+            if "meta_ok" not in e and not e.get("album") and re.match(r"https?://", url):
+                out.setdefault(url, []).append(e)
+    return out
+
+
+def refresh_meta_url(url: str, owner: dict | None) -> dict | None:
+    cmd = ytdlp_base() + ["--skip-download", "--no-warnings", "--ignore-config", "--no-playlist",
+                          "--print", "%(.{tags,categories,description})j"]
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            cmd += cookie_args(Path(tmp), url, owner) + list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
+            r = run_tool(cmd, timeout=60, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        meta = json.loads(r.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def refresh_meta_all() -> None:
+    todo = _refresh_todo()
+    REFRESH.update(running=True, done=0, failed=0, total=len(todo), stop=False)
+    try:
+        for i, (url, entries) in enumerate(todo.items()):
+            if REFRESH["stop"]:
+                break
+            if i:
+                time.sleep(REFRESH_WAIT)
+            meta = refresh_meta_url(url, USERS.get(entries[0].get("owner") or ""))
+            with LIB_LOCK:
+                for e in entries:
+                    if meta is None:
+                        e["meta_ok"] = -1
+                    else:
+                        e.update(tags=meta_tags(meta) or e.get("tags") or [], meta_ok=1,
+                                 desc=str(meta.get("description") or "")[:DESC_MAX] or e.get("desc") or "")
+            if meta is None:
+                REFRESH["failed"] += 1
+            else:
+                for e in entries:
+                    coll_auto(e)
+            REFRESH["done"] += 1
+            lib_save_soon()
+    finally:
+        REFRESH["running"] = False
+
+
+@app.get("/api/library/refresh-meta")
+def refresh_meta_state():
+    need_admin()
+    return jsonify(**{k: v for k, v in REFRESH.items() if k != "stop"}, todo=sum(map(len, _refresh_todo().values())))
+
+
+@app.post("/api/library/refresh-meta")
+def refresh_meta_start():
+    need_admin()
+    if REFRESH["running"]:
+        return err("Läuft schon", 409)
+    REFRESH["running"] = True           # sofort, damit ein Doppelklick nicht zwei Läufe startet
+    threading.Thread(target=refresh_meta_all, daemon=True).start()
+    return jsonify(ok=True)
+
+
+@app.delete("/api/library/refresh-meta")
+def refresh_meta_stop():
+    need_admin()
+    REFRESH["stop"] = True
+    return jsonify(ok=True)
+
+
 @app.post("/api/library/<eid>/edit")
 def library_edit(eid):
     """Nachträglich bearbeiten: läuft als Auftrag, das Ergebnis kommt als neue Datei in die Mediathek."""

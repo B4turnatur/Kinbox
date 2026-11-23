@@ -98,4 +98,41 @@ with tempfile.TemporaryDirectory() as d:
     assert set(c.post(f"/api/collections/{plain['id']}", json={"add": ["kmc"]}, headers=kid).get_json()) == {"id", "name", "items"}
     print("task2 ok")
 
+    # ---- Task 3: alte Einträge nachladen (yt-dlp nachgebaut)
+    import json, subprocess
+    calls = []
+
+    def fake_run(cmd, timeout, **kw):
+        calls.append(cmd[-1])
+        if cmd[-1] == "https://a.example/v":
+            out = json.dumps({"tags": ["GTA"], "categories": None, "description": "Los Santos #stunt"}).encode()
+            return subprocess.CompletedProcess(cmd, 0, out, b"")
+        return subprocess.CompletedProcess(cmd, 1, b"", b"ERROR: Video unavailable")
+    server.run_tool = fake_run
+    server.REFRESH_WAIT = 0
+    server.LIB.clear(); server._PATH_INDEX.clear()
+    entry("am4", k["id"], url="https://a.example/v")
+    entry("amp3", k["id"], url="https://a.example/v")
+    entry("bad", k["id"], url="https://b.example/v")
+    entry("alb", k["id"], url="https://a.example/p", album="j1")
+    entry("nourl", k["id"])
+    kc = c.post("/api/collections", json={"name": "Auto", "words": "gta"}, headers=kid).get_json()
+    assert kc["items"] == []
+    assert c.get("/api/library/refresh-meta", headers=adm).get_json()["todo"] == 3
+    server.refresh_meta_all()
+    assert sorted(calls) == ["https://a.example/v", "https://b.example/v"], calls      # ein Aufruf pro Link
+    for eid in ("am4", "amp3"):
+        assert server.LIB[eid]["tags"] == ["gta", "stunt"] and server.LIB[eid]["meta_ok"] == 1, server.LIB[eid]
+        assert server.LIB[eid]["desc"] == "Los Santos #stunt"
+    assert server.LIB["bad"]["meta_ok"] == -1 and "meta_ok" not in server.LIB["alb"]
+    kcoll = next(x for x in server.USERS[k["id"]]["collections"] if x["id"] == kc["id"])
+    assert set(kcoll["items"]) == {"am4", "amp3"}, kcoll
+    st = c.get("/api/library/refresh-meta", headers=adm).get_json()   # gezählt wird pro Link
+    assert st["todo"] == 0 and st["total"] == 2 and st["done"] == 2 and st["failed"] == 1 and not st["running"], st
+    calls.clear(); server.refresh_meta_all()
+    assert calls == [] and server.REFRESH["running"] is False
+    for m in ("get", "post", "delete"):
+        assert getattr(c, m)("/api/library/refresh-meta", headers=kid).status_code == 403
+    print("task3 ok")
+
     print("autocoll ok")

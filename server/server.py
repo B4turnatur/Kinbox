@@ -240,7 +240,7 @@ def _build_args(opts: dict, job_dir: Path, temp_dir: Path | None, archive_dir: P
         "-P", f"temp:{temp_dir or download_root() / '.tmp'}",
         "--progress-template", "download:@@P%(progress)j",
         "--progress-template", "postprocess:@@Q%(progress.status)s|%(progress.postprocessor)s",
-        "--print", "before_dl:@@I%(.{title,thumbnail,id,playlist_index,n_entries,extractor_key,uploader,duration,webpage_url,track,vcodec,format_id,resolution})j",
+        "--print", "before_dl:@@I%(.{title,thumbnail,id,playlist_index,n_entries,extractor_key,uploader,duration,webpage_url,track,vcodec,format_id,resolution,tags,categories,description})j",
         "--print", "after_move:@@F%(filepath|)j",
         "--no-mtime",
     ]
@@ -1223,7 +1223,9 @@ def _photo_meta(js: dict) -> dict:
     uploader = first("fullname", "nickname", "username", "user", "author") or author.get("nickname") or ""
     if js.get("subcategory") == "avatar":
         title = f"Profilbild {uploader}".strip()
-    return {"title": title.splitlines()[0][:100] if title else "", "uploader": uploader}
+    tags = next((js[k] for k in ("tags", "hashtags") if isinstance(js.get(k), list)), [])
+    return {"title": title.splitlines()[0][:100] if title else "", "uploader": uploader,
+            "description": first("description", "desc", "content", "caption"), "tags": tags}
 
 
 def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = "", audio_only: bool = False):
@@ -1295,7 +1297,8 @@ def run_photos(job: "Job", job_dir: Path, ytdlp_error: str = "", url: str = "", 
         shutil.move(str(f), dst)
         job.files.append(str(dst))
         job.file_meta[str(dst)] = {"title": f"{title} ({i}/{n})" if num else title,
-                                   "uploader": m["uploader"], "webpage_url": job.url, "album": album}
+                                   "uploader": m["uploader"], "webpage_url": job.url, "album": album,
+                                   "description": m.get("description"), "tags": m.get("tags")}
     if job.title == job.url:
         job.title = title
     if cancelled:
@@ -1461,14 +1464,35 @@ def lib_by_path(path: str) -> dict | None:
         return None
 
 
+TAGS_MAX, TAG_LEN, DESC_MAX, DESC_PUBLIC = 50, 60, 2000, 300
+
+
+def meta_tags(meta: dict) -> list[str]:
+    """Suchbare Schlagwörter: yt-dlp-tags + categories + #hashtags aus der Beschreibung – klein, ohne #, ohne Doppelte."""
+    out = []
+    raw = [x for k in ("tags", "categories") if isinstance(meta.get(k), list) for x in meta[k]]
+    desc = meta.get("description")
+    raw += re.findall(r"#(\w+)", desc) if isinstance(desc, str) else []
+    for x in raw:
+        x = str(x).strip().lstrip("#").lower()[:TAG_LEN]
+        if x and x not in out:
+            out.append(x)
+    return out[:TAGS_MAX]
+
+
 def lib_add(path: str, meta: dict, job: "Job") -> dict:
     existing = lib_by_path(path)
     size = _size(path)
+    tags, desc = meta_tags(meta), str(meta.get("description") or "")[:DESC_MAX]
     with LIB_LOCK:
         # Profil inzwischen gelöscht (Auftrag lief noch) → Datei gehört dem Admin statt niemandem
         owner = job.owner if job.owner in USERS or not USERS else admin_user()["id"]
         if existing:
             existing.update(size=size, added=time.time(), job_id=job.id)
+            if tags:
+                existing["tags"] = tags
+            if desc:
+                existing["desc"] = desc
             entry = existing
         else:
             entry = {
@@ -1481,6 +1505,7 @@ def lib_add(path: str, meta: dict, job: "Job") -> dict:
                 "added": time.time(), "size": size, "kind": kind_of(path), "pinned": False,
                 "job_id": job.id, "pc_downloaded": None, "delete_at": None,
                 "owner": owner, "shared": False, "album": meta.get("album") or "",
+                "tags": tags, "desc": desc,
             }
             LIB[entry["id"]] = entry
             _PATH_INDEX[_pkey(path)] = entry["id"]
@@ -1529,6 +1554,8 @@ def lib_public(e: dict, roots: dict | None = None) -> dict:
                                "added", "size", "kind", "pinned", "extractor", "pc_downloaded", "delete_at",
                                "owner", "shared", "album")}
     owner = USERS.get(e.get("owner") or "")
+    d["tags"] = e.get("tags") or []
+    d["desc"] = (e.get("desc") or "")[:DESC_PUBLIC]
     d["owner_name"] = owner["name"] if owner else "?"
     d["owner_avatar"] = owner["avatar"] if owner else "❔"
     if roots is None:

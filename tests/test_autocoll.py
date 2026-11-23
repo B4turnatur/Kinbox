@@ -41,4 +41,61 @@ with tempfile.TemporaryDirectory() as d:
     assert pm["description"] == "Foto #GTA" and pm["tags"] == ["urlaub"], pm
     print("task1 ok")
 
+    # ---- Task 2: Sammlungen mit Stichwörtern
+    assert server.coll_words(" GTA, #gta5 ,x, gta\nLos Santos") == ["gta", "gta5", "los santos"]
+    assert len(server.coll_words([f"w{i:02d}" for i in range(30)])) == 20
+    assert server.coll_words(None) == [] and server.coll_words(["a" * 50]) == ["a" * 40]
+    assert server.coll_match({"title": "Stunt", "tags": ["gta5"]}, ["gta"])
+    assert not server.coll_match({"title": "agta"}, ["gta"])
+    assert server.coll_match({"title": "x", "desc": "in Los Santos"}, ["los santos"])
+    assert server.coll_match({"title": "GTA V"}, ["gta"])
+    assert not server.coll_match({"title": "Minecraft"}, ["gta"])
+
+    server.LIB.clear(); server._PATH_INDEX.clear()
+
+    def entry(eid, owner, shared=False, **kw):
+        p = d / f"{eid}.mp4"; p.write_bytes(b"x")
+        server.LIB[eid] = {"id": eid, "path": str(p), "name": p.name, "title": eid, "owner": owner, "shared": shared,
+                           "added": 1, "size": 1, "kind": "video", **kw}
+        server._PATH_INDEX[server._pkey(str(p))] = eid
+    entry("kgta", k["id"], tags=["gta5"])
+    entry("kmc", k["id"], tags=["minecraft"])
+    entry("afam", a["id"], shared=True, desc="#GTA online")
+    entry("apriv", a["id"], title="GTA privat")
+    c = server.app.test_client()
+    kid, adm = {"X-Token": k["token"]}, {"X-Token": a["token"]}
+
+    col = c.post("/api/collections", json={"name": "GTA", "words": "gta"}, headers=kid).get_json()
+    assert set(col["items"]) == {"kgta", "afam"} and col["words"] == ["gta"], col
+    acol = c.post("/api/collections", json={"name": "GTA", "words": ["gta"]}, headers=adm).get_json()
+    assert set(acol["items"]) == {"afam", "apriv"}, acol       # privates Kind-Video nicht beim Admin
+    entry("kneu", k["id"], tags=["gta"])                       # Kind teilt es später
+    assert c.post("/api/library/kneu/share", json={"shared": True}, headers=kid).status_code == 200
+    acoll = next(x for x in server.USERS[a["id"]]["collections"] if x["id"] == acol["id"])
+    assert "kneu" in acoll["items"], acoll
+
+    # manuell entfernt → bleibt draußen
+    r = c.post(f"/api/collections/{col['id']}", json={"remove": ["kgta"]}, headers=kid).get_json()
+    assert "kgta" not in r["items"] and r["skip"] == ["kgta"], r
+    server.lib_add(server.LIB["kgta"]["path"], {"tags": ["gta5"]}, server.Job({"url": "u"}, owner=k["id"]))
+    r = c.post(f"/api/collections/{col['id']}", json={"words": "gta, gta5"}, headers=kid).get_json()
+    assert "kgta" not in r["items"] and r["words"] == ["gta", "gta5"], r
+    r = c.post(f"/api/collections/{col['id']}", json={"add": ["kgta"]}, headers=kid).get_json()
+    assert "kgta" in r["items"] and r["skip"] == [], r
+
+    # neuer Download mit passendem Tag → sofort drin
+    p = d / "frisch.mp4"; p.write_bytes(b"x")
+    ne = server.lib_add(str(p), {"title": "Neu", "tags": ["GTA"]}, server.Job({"url": "u2"}, owner=k["id"]))
+    kcoll = next(x for x in server.USERS[k["id"]]["collections"] if x["id"] == col["id"])
+    assert ne["id"] in kcoll["items"]
+
+    # Automatik aus: words + skip weg, items bleiben
+    r = c.post(f"/api/collections/{col['id']}", json={"words": ""}, headers=kid).get_json()
+    assert "words" not in r and "skip" not in r and "kgta" in r["items"], r
+    # Sammlung ohne words: Antwort genau wie bisher
+    plain = c.post("/api/collections", json={"name": "Normal"}, headers=kid).get_json()
+    assert set(plain) == {"id", "name", "items"}, plain
+    assert set(c.post(f"/api/collections/{plain['id']}", json={"add": ["kmc"]}, headers=kid).get_json()) == {"id", "name", "items"}
+    print("task2 ok")
+
     print("autocoll ok")

@@ -1510,6 +1510,7 @@ def lib_add(path: str, meta: dict, job: "Job") -> dict:
             LIB[entry["id"]] = entry
             _PATH_INDEX[_pkey(path)] = entry["id"]
     lib_save_soon()
+    coll_auto(entry)
     threading.Thread(target=thumb_file, args=(entry,), daemon=True).start()   # bevor der Link abläuft
     return entry
 
@@ -3291,6 +3292,7 @@ def library_share(eid):
     with LIB_LOCK:
         e["shared"] = bool(body.get("shared", not e.get("shared")))
     lib_save_soon()
+    coll_auto(e)
     return jsonify(lib_public(e))
 
 
@@ -3486,14 +3488,19 @@ def library_favs():
 
 @app.post("/api/collections")
 def collection_new():
-    name = str((json_body()).get("name") or "").strip()[:60]
+    body = json_body()
+    name = str(body.get("name") or "").strip()[:60]
     if not name:
         return err("Bitte einen Namen eingeben")
+    words = coll_words(body.get("words"))
     with USERS_LOCK:
         cols = me().setdefault("collections", [])
         if len(cols) >= 100:
             return err("Zu viele Sammlungen")
         c = {"id": uuid.uuid4().hex[:8], "name": name, "items": []}
+        if words:
+            c.update(words=words, skip=[])
+            coll_fill(me(), c)
         cols.append(c)
     users_save()
     return jsonify(c), 201
@@ -3501,9 +3508,10 @@ def collection_new():
 
 @app.post("/api/collections/<cid>")
 def collection_update(cid):
-    """{name?, add?: [ids], remove?: [ids]}"""
+    """{name?, add?: [ids], remove?: [ids], words?: "a, b" | [..] (leer = Automatik aus)}"""
     body = json_body()
     add = _readable_ids(body.get("add") or [])
+    out = {}
     with USERS_LOCK:
         c = _coll(cid)
         if not c:
@@ -3513,8 +3521,19 @@ def collection_update(cid):
         rm = {x for x in body.get("remove") or [] if isinstance(x, str)}
         c["items"] = [i for i in c["items"] if i not in rm]
         c["items"] += [i for i in add if i not in c["items"]]
+        if c.get("words"):          # von Hand rausgenommen → bleibt draußen; von Hand rein → nicht mehr gesperrt
+            c["skip"] = [i for i in c.get("skip") or [] if i not in add] + [i for i in rm if i not in (c.get("skip") or [])]
+        if "words" in body:
+            words = coll_words(body["words"])
+            if words:
+                c["words"] = words
+                c.setdefault("skip", [])
+                out["added"] = coll_fill(me(), c)
+            else:
+                c.pop("words", None); c.pop("skip", None)
+        out.update(c)
     users_save()
-    return jsonify(c)
+    return jsonify(out)
 
 
 @app.delete("/api/collections/<cid>")
@@ -3525,6 +3544,60 @@ def collection_delete(cid):
         u["collections"] = [c for c in u.get("collections") or [] if c["id"] != cid]
     users_save()
     return jsonify(ok=True)
+
+
+# ---- Auto-Sammlungen: Sammlung mit Stichwörtern füllt sich selbst (Titel, Kanal, Hashtags, Beschreibung, Ordner)
+WORDS_MAX, WORD_LEN = 20, 40
+
+
+def coll_words(raw) -> list[str]:
+    if isinstance(raw, str):
+        raw = re.split(r"[,\n]", raw)
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for w in raw:
+        w = " ".join(str(w).split()).lstrip("#").lower()[:WORD_LEN]
+        if len(w) >= 2 and w not in out:
+            out.append(w)
+    return out[:WORDS_MAX]
+
+
+def coll_match(e: dict, words: list[str], roots: dict | None = None) -> bool:
+    folder = lib_public(e, roots)["folder"] if e.get("path") else ""
+    text = " ".join([str(e.get("title") or ""), str(e.get("uploader") or ""), " ".join(e.get("tags") or []),
+                     str(e.get("desc") or ""), folder]).lower()
+    return any(re.search(r"(?<!\w)" + re.escape(w), text) for w in words)   # nur am Wortanfang: „gta“ ≠ „agta“
+
+
+def coll_eligible(e: dict, u: dict) -> bool:
+    """Auch beim Admin nur Eigenes + Geteiltes – sonst landen private Videos der Kinder in seiner Sammlung."""
+    return e.get("owner") == u["id"] or bool(e.get("shared"))
+
+
+def coll_fill(u: dict, c: dict) -> int:
+    """Ganze Mediathek der Person durchgehen; Aufrufer hält USERS_LOCK."""
+    skip, have, n, roots = set(c.get("skip") or []), set(c["items"]), 0, {}
+    with LIB_LOCK:
+        for e in LIB.values():
+            if e["id"] not in have and e["id"] not in skip and coll_eligible(e, u) and coll_match(e, c["words"], roots):
+                c["items"].append(e["id"]); n += 1
+    return n
+
+
+def coll_auto(e: dict) -> None:
+    """Neuer/geänderter Eintrag → in alle passenden Stichwort-Sammlungen aller Personen."""
+    changed = False
+    with USERS_LOCK:
+        for u in USERS.values():
+            if not coll_eligible(e, u):
+                continue
+            for c in u.get("collections") or []:
+                if c.get("words") and e["id"] not in c["items"] and e["id"] not in (c.get("skip") or []) \
+                        and coll_match(e, c["words"]):
+                    c["items"].append(e["id"]); changed = True
+    if changed:
+        users_save()
 
 
 @app.post("/api/library/<eid>/edit")

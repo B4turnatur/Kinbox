@@ -646,6 +646,9 @@ body.dropping main { outline: 3px dashed var(--accent); outline-offset: -6px; bo
     <div class="row"><span class="hint" id="cookieInfo"></span><label class="btn">cookies.txt hochladen<input type="file" id="cookieFile" accept=".txt,text/plain" hidden></label><button type="button" class="btn" id="cookieDel" hidden>Entfernen</button></div>
     <label class="switch"><input type="checkbox" id="cookiesAll"><span></span>Cookies auch für die anderen Profile nutzen</label>
     <div class="hint">Aus: nur Admin-Aufträge laden mit deinen Cookies. YouTube-Verlauf, „Später ansehen“ und „Mag ich“ sind für andere Profile immer gesperrt.</div>
+    <h2><svg class="i"><use href="/static/icons.svg#wand"/></svg> Hashtags alter Videos</h2>
+    <div class="hint">Fragt bei YouTube/TikTok einmal die Hashtags der schon geladenen Videos ab, damit Suche und automatische Sammlungen sie finden. Läuft langsam im Hintergrund.</div>
+    <div class="row"><span class="hint" id="refInfo"></span><button type="button" class="btn" id="refBtn" hidden>Jetzt nachladen</button></div>
     <h2><svg class="i"><use href="/static/icons.svg#update"/></svg> Kinbox-Update</h2>
     <div class="row"><span class="hint" id="updInfo"></span><button type="button" class="btn primary" id="appUpdate" hidden>Jetzt aktualisieren</button></div>
     <div class="hint" id="srvInfo"></div>
@@ -824,7 +827,7 @@ document.addEventListener("click", (e) => { const a = e.target.closest("[data-op
 function render() {
   const q = $("#q").value.trim().toLowerCase(), site = $("#site").hidden ? "" : $("#site").value;
   let list = items.filter((e) => (!kind || e.kind === kind) && (!site || e.extractor === site)
-    && (!q || [e.title, e.name, e.uploader, e.folder, e.owner_name, e.extractor].filter(Boolean).join(" ").toLowerCase().includes(q)));
+    && (!q || [e.title, e.name, e.uploader, e.folder, e.owner_name, e.extractor, ...(e.tags || []), e.desc].filter(Boolean).join(" ").toLowerCase().includes(q)));
   const s = $("#sort").value;
   list.sort((a, b) => s === "old" ? a.added - b.added : s === "big" ? b.size - a.size : s === "long" ? (b.duration || 0) - (a.duration || 0)
     : s === "name" ? String(a.title).localeCompare(String(b.title)) : b.added - a.added);
@@ -1417,9 +1420,9 @@ async function setFav(ids, on) {
 function drawColls() {
   const cur = colls.find((c) => "coll:" + c.id === scope);
   $("#colls").innerHTML = `<button class="chip${scope === "favs" ? " active" : ""}" data-c="favs">${ic("star")} Favoriten <em>${favs.size || ""}</em></button>`
-    + colls.map((c) => `<button class="chip${c === cur ? " active" : ""}" data-c="coll:${esc(c.id)}">${ic("folder")} ${esc(c.name)} <em>${c.items.length || ""}</em></button>`).join("")
+    + colls.map((c) => `<button class="chip${c === cur ? " active" : ""}" data-c="coll:${esc(c.id)}">${ic(c.words?.length ? "wand" : "folder")} ${esc(c.name)} <em>${c.items.length || ""}</em></button>`).join("")
     + `<button class="chip ghost" data-c="new">${ic("plus")} Sammlung</button>`
-    + (cur ? `<button class="chip ghost" data-c="ren" title="Sammlung umbenennen">${ic("pencil")}</button><button class="chip ghost" data-c="del" title="Sammlung löschen (Dateien bleiben)">${ic("trash")}</button>` : "");
+    + (cur ? `<button class="chip ghost${cur.words?.length ? " on" : ""}" data-c="words" title="Automatisch füllen">${ic("wand")}</button><button class="chip ghost" data-c="ren" title="Sammlung umbenennen">${ic("pencil")}</button><button class="chip ghost" data-c="del" title="Sammlung löschen (Dateien bleiben)">${ic("trash")}</button>` : "");
 }
 $("#colls").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-c]"); if (!b) return;
@@ -1432,6 +1435,11 @@ $("#colls").addEventListener("click", async (e) => {
     } else if (c === "ren") {
       const name = prompt(t("Neuer Name:"), cur.name)?.trim(); if (!name) return;
       await api(`/api/collections/${cur.id}`, { method: "POST", body: JSON.stringify({ name }) }); load();
+    } else if (c === "words") {
+      const words = prompt(t("Automatisch füllen: Stichwörter, mit Komma getrennt (z. B. gta, gta5, los santos). Leer = aus."), cur.words?.join(", ") || "");
+      if (words === null) return;
+      const r = await api(`/api/collections/${cur.id}`, { method: "POST", body: JSON.stringify({ words }) });
+      toast(r.words ? t(`${r.added} Videos hinzugefügt`) : t("Automatik aus")); load();
     } else if (c === "del") {
       if (!confirm(t(`Sammlung „${cur.name}“ löschen? Die Dateien bleiben erhalten.`))) return;
       await api(`/api/collections/${cur.id}`, { method: "DELETE" }); scope = "mine"; load();
@@ -1688,6 +1696,7 @@ async function openSettings(tab = "profile") {
       $("#rateMb").value = p.rate_limit_mb || 0;
       $("#minFree").value = p.min_free_gb ?? 1;
       api("/api/cookies").then(showCookies).catch(() => {});
+      refPoll();
       $("#srvInfo").innerHTML = `Kinbox ${esc(p.version)} · yt-dlp ${esc(p.ytdlp)} · ffmpeg ${p.ffmpeg ? "✓" : "✗"} · JS ${esc(p.js_runtime || "✗")} · Ordner <code>${esc(p.download_dir)}</code>${p.free >= 0 ? ` · <span>${esc(fmtBytes(p.free) || "0 B")} frei</span>` : ""}`;
     }
     if (!isAdmin && (tab === "family" || tab === "server")) tab = "profile";
@@ -1743,6 +1752,23 @@ $("#appUpdate").addEventListener("click", async () => {
     toast(t("Kinbox antwortet nicht – bitte Seite neu laden"), true);
   } catch (e) { toast(e.message, true); $("#updInfo").textContent = ""; }
   finally { b.disabled = false; }
+});
+let refTimer = 0, refRunning = false;
+async function refPoll() {
+  clearTimeout(refTimer);
+  try {
+    const r = await api("/api/library/refresh-meta");
+    refRunning = r.running;
+    $("#refInfo").textContent = r.running ? t(`Läuft: ${r.done} / ${r.total}`)
+      : r.todo ? t(`${r.todo} Videos ohne Hashtags`) : t("Alle erledigt");
+    $("#refBtn").textContent = r.running ? t("Anhalten") : t("Jetzt nachladen");
+    $("#refBtn").hidden = !r.running && !r.todo;
+    if (r.running && $("#setDlg").open) refTimer = setTimeout(refPoll, 3000);
+  } catch { $("#refInfo").textContent = ""; $("#refBtn").hidden = true; }
+}
+$("#refBtn").addEventListener("click", async () => {
+  try { await api("/api/library/refresh-meta", { method: refRunning ? "DELETE" : "POST" }); } catch (err) { toast(err.message, true); }
+  setTimeout(refPoll, 300);
 });
 function showCookies(r) {
   $("#cookieInfo").textContent = r.sites.length ? t(`Eingerichtet für: ${r.sites.join(", ")}`) : t("Keine Cookies eingerichtet");

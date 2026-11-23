@@ -253,9 +253,15 @@
     "Wird geprüft …": "Checking …", "Noch keine Abos.": "No subscriptions yet.", "Abo löschen? Bisher geladene Videos bleiben.": "Delete subscription? Videos downloaded so far stay.",
     "Abonniert – Kinbox schaut jetzt regelmäßig nach": "Subscribed – Kinbox will now check regularly", "Unbekannte Vorlage": "Unknown preset",
     "Intervall": "Interval", "Anzahl pro Prüfung": "Count per check", "Das hast du schon abonniert": "You're already subscribed to that", "Zu viele Abos": "Too many subscriptions",
+    // ---- Auto-Sammlungen
+    "Automatisch füllen": "Fill automatically", "Automatik aus": "Automatic off", "Hashtags alter Videos": "Hashtags of older videos",
+    "Automatisch füllen: Stichwörter, mit Komma getrennt (z. B. gta, gta5, los santos). Leer = aus.": "Fill automatically: keywords, separated by commas (e.g. gta, gta5, los santos). Empty = off.",
+    "Fragt bei YouTube/TikTok einmal die Hashtags der schon geladenen Videos ab, damit Suche und automatische Sammlungen sie finden. Läuft langsam im Hintergrund.": "Asks YouTube/TikTok once for the hashtags of videos you already downloaded, so search and automatic collections can find them. Runs slowly in the background.",
+    "Jetzt nachladen": "Fetch now", "Anhalten": "Stop", "Alle erledigt": "All done", "Läuft schon": "Already running",
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [
+    ["{0} Videos hinzugefügt", "{0} videos added"], ["Läuft: {0} / {1}", "Running: {0} / {1}"], ["{0} Videos ohne Hashtags", "{0} videos without hashtags"],
     ["Audio-Datei: {0}", "Audio file: {0}"], ["{0} ausgewählt", "{0} selected"], ["{0} gingen nicht", "{0} failed"],
     ["{0} Dateien wirklich löschen?", "Really delete {0} files?"], ["Sammlung „{0}“ löschen? Die Dateien bleiben erhalten.", "Delete collection \"{0}\"? The files stay."],
     ["Aus „{0}“ entfernt", "Removed from \"{0}\""], ["In „{0}“ gelegt", "Added to \"{0}\""], ["Profilbild {0}", "Profile picture {0}"],

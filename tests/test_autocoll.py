@@ -135,4 +135,65 @@ with tempfile.TemporaryDirectory() as d:
         assert getattr(c, m)("/api/library/refresh-meta", headers=kid).status_code == 403
     print("task3 ok")
 
+    # ---- Abschlussprüfung
+    # I1: neue Downloads mit yt-dlp-Infos zählen nicht als „ohne Hashtags“; Bearbeiten-Ergebnis ohne Infos schon
+    p = d / "neu322.mp4"; p.write_bytes(b"x")
+    ne = server.lib_add(str(p), {"title": "t", "tags": [], "categories": None, "description": ""}, server.Job({"url": "https://n.example/v"}, owner=k["id"]))
+    assert ne["meta_ok"] == 1, ne
+    p = d / "edit.mp4"; p.write_bytes(b"x")
+    ed = server.lib_add(str(p), {"title": "t (Zuschnitt)", "webpage_url": "https://n.example/w"}, server.Job({"url": ""}, owner=k["id"]))
+    assert "meta_ok" not in ed
+
+    # I2: nur Einzelvideos abfragen – mit -I 1; Sound-/Profil-Links, Bilder und Links mit verschiedenen Videos nicht
+    server.LIB.clear(); server._PATH_INDEX.clear(); calls.clear()
+    cmds = []
+    real_fake = fake_run
+    server.run_tool = lambda cmd, timeout, **kw: (cmds.append(cmd), real_fake(cmd, timeout))[1]
+    entry("snd", k["id"], url="https://www.tiktok.com/music/Original-Sound-7123456789012345678")
+    entry("prof", k["id"], url="https://www.tiktok.com/@nasa")
+    entry("ig", k["id"], url="https://www.instagram.com/nasa/")
+    entry("pic", k["id"], url="https://a.example/v", kind="image")
+    entry("pl1", k["id"], url="https://pl.example/list", vid="aaa")
+    entry("pl2", k["id"], url="https://pl.example/list", vid="bbb")
+    entry("ok1", k["id"], url="https://a.example/v", vid="x1")
+    server.refresh_meta_all()
+    assert calls == ["https://a.example/v"], calls
+    i = cmds[0].index("-I"); assert cmds[0][i + 1] == "1", cmds[0]
+    for eid in ("snd", "prof", "ig", "pic", "pl1", "pl2"):
+        assert "meta_ok" not in server.LIB[eid], eid
+
+    # I3: vorübergehende Fehler → nicht endgültig, Lauf stoppt bei Sperre bzw. nach 3 Fehlern am Stück
+    server.LIB.clear(); server._PATH_INDEX.clear(); calls.clear()
+    errs = {"https://r.example/1": "ERROR: HTTP Error 429: Too Many Requests"}
+
+    def fake2(cmd, timeout, **kw):
+        calls.append(cmd[-1])
+        return subprocess.CompletedProcess(cmd, 1, b"", errs.get(cmd[-1], "ERROR: Connection reset by peer").encode())
+    server.run_tool = fake2
+    entry("r1", k["id"], url="https://r.example/1"); entry("r2", k["id"], url="https://r.example/2")
+    server.refresh_meta_all()
+    assert calls == ["https://r.example/1"] and "meta_ok" not in server.LIB["r1"] and "meta_ok" not in server.LIB["r2"], calls
+    assert server.REFRESH["error"], server.REFRESH
+    server.LIB.clear(); server._PATH_INDEX.clear(); calls.clear(); errs.clear()
+    for n in range(5):
+        entry(f"n{n}", k["id"], url=f"https://net.example/{n}")
+    server.refresh_meta_all()
+    assert len(calls) == 3 and all("meta_ok" not in e for e in server.LIB.values()), calls
+    errs["https://g.example/1"] = "ERROR: [youtube] abc: Video unavailable. This video has been removed"
+    server.LIB.clear(); server._PATH_INDEX.clear(); calls.clear()
+    entry("g1", k["id"], url="https://g.example/1")
+    server.refresh_meta_all()
+    assert server.LIB["g1"]["meta_ok"] == -1 and not server.REFRESH["error"]
+
+    # I4: „remove“ mit fremden/unbekannten ids lässt skip nicht wachsen; skip nur mit noch vorhandenen Einträgen
+    server.LIB.clear(); server._PATH_INDEX.clear()
+    entry("s1", k["id"], tags=["gta"])
+    sc = c.post("/api/collections", json={"name": "S", "words": "gta"}, headers=kid).get_json()
+    r = c.post(f"/api/collections/{sc['id']}", json={"remove": ["s1"] + [f"junk{i}" for i in range(1000)]}, headers=kid).get_json()
+    assert r["skip"] == ["s1"], len(r["skip"])
+    del server.LIB["s1"]
+    r = c.post(f"/api/collections/{sc['id']}", json={"words": "gta"}, headers=kid).get_json()
+    assert r["skip"] == [], r
+    print("final ok")
+
     print("autocoll ok")

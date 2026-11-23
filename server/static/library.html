@@ -1760,7 +1760,7 @@ async function refPoll() {
     const r = await api("/api/library/refresh-meta");
     refRunning = r.running;
     $("#refInfo").textContent = r.running ? t(`Läuft: ${r.done} / ${r.total}`)
-      : r.todo ? t(`${r.todo} Videos ohne Hashtags`) : t("Alle erledigt");
+      : (r.error ? t("Angehalten:") + " " + r.error + " · " : "") + (r.todo ? t(`${r.todo} Videos ohne Hashtags`) : t("Alle erledigt"));
     $("#refBtn").textContent = r.running ? t("Anhalten") : t("Jetzt nachladen");
     $("#refBtn").hidden = !r.running && !r.todo;
     if (r.running && $("#setDlg").open) refTimer = setTimeout(refPoll, 3000);

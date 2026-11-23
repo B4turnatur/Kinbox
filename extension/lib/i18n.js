@@ -257,7 +257,7 @@
     "Automatisch füllen": "Fill automatically", "Automatik aus": "Automatic off", "Hashtags alter Videos": "Hashtags of older videos",
     "Automatisch füllen: Stichwörter, mit Komma getrennt (z. B. gta, gta5, los santos). Leer = aus.": "Fill automatically: keywords, separated by commas (e.g. gta, gta5, los santos). Empty = off.",
     "Fragt bei YouTube/TikTok einmal die Hashtags der schon geladenen Videos ab, damit Suche und automatische Sammlungen sie finden. Läuft langsam im Hintergrund.": "Asks YouTube/TikTok once for the hashtags of videos you already downloaded, so search and automatic collections can find them. Runs slowly in the background.",
-    "Jetzt nachladen": "Fetch now", "Anhalten": "Stop", "Alle erledigt": "All done", "Läuft schon": "Already running",
+    "Jetzt nachladen": "Fetch now", "Angehalten:": "Stopped:", "Anhalten": "Stop", "Alle erledigt": "All done", "Läuft schon": "Already running",
   };
   // Texte mit Platzhaltern – {0}, {1} … werden selbst wieder übersetzt (z. B. „heute“).
   const PAT = [

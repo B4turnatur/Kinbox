@@ -1484,6 +1484,8 @@ def lib_add(path: str, meta: dict, job: "Job") -> dict:
     existing = lib_by_path(path)
     size = _size(path)
     tags, desc = meta_tags(meta), str(meta.get("description") or "")[:DESC_MAX]
+    # Infos kamen von yt-dlp/gallery-dl (auch wenn leer) → später nicht nochmal nachfragen
+    fetched = any(k in meta for k in ("tags", "categories", "description"))
     with LIB_LOCK:
         # Profil inzwischen gelöscht (Auftrag lief noch) → Datei gehört dem Admin statt niemandem
         owner = job.owner if job.owner in USERS or not USERS else admin_user()["id"]
@@ -1509,6 +1511,8 @@ def lib_add(path: str, meta: dict, job: "Job") -> dict:
             }
             LIB[entry["id"]] = entry
             _PATH_INDEX[_pkey(path)] = entry["id"]
+        if fetched:
+            entry["meta_ok"] = 1
     lib_save_soon()
     coll_auto(entry)
     threading.Thread(target=thumb_file, args=(entry,), daemon=True).start()   # bevor der Link abläuft
@@ -3519,10 +3523,12 @@ def collection_update(cid):
         if str(body.get("name") or "").strip():
             c["name"] = str(body["name"]).strip()[:60]
         rm = {x for x in body.get("remove") or [] if isinstance(x, str)}
+        removed = [i for i in c["items"] if i in rm]       # nur was wirklich drin war – sonst wächst users.json beliebig
         c["items"] = [i for i in c["items"] if i not in rm]
         c["items"] += [i for i in add if i not in c["items"]]
         if c.get("words"):          # von Hand rausgenommen → bleibt draußen; von Hand rein → nicht mehr gesperrt
-            c["skip"] = [i for i in c.get("skip") or [] if i not in add] + [i for i in rm if i not in (c.get("skip") or [])]
+            old = [i for i in c.get("skip") or [] if i not in add and i in LIB]
+            c["skip"] = (old + [i for i in removed if i not in old])[-SKIP_MAX:]
         if "words" in body:
             words = coll_words(body["words"])
             if words:
@@ -3547,7 +3553,8 @@ def collection_delete(cid):
 
 
 # ---- Auto-Sammlungen: Sammlung mit Stichwörtern füllt sich selbst (Titel, Kanal, Hashtags, Beschreibung, Ordner)
-WORDS_MAX, WORD_LEN = 20, 40
+WORDS_MAX, WORD_LEN, SKIP_MAX = 20, 40, 5000
+# Sperr-Reihenfolge: USERS_LOCK vor LIB_LOCK (coll_fill), nie umgekehrt – coll_auto() erst nach dem LIB_LOCK-Block aufrufen
 
 
 def coll_words(raw) -> list[str]:
@@ -3601,61 +3608,89 @@ def coll_auto(e: dict) -> None:
 
 
 # Alte Einträge: Hashtags einmal nachladen (yt-dlp ohne Download, langsam nacheinander – sonst sperrt YouTube)
-REFRESH = {"running": False, "done": 0, "total": 0, "failed": 0, "stop": False}
+REFRESH = {"running": False, "done": 0, "total": 0, "failed": 0, "stop": False, "error": ""}
 REFRESH_WAIT = 2.5
+REFRESH_MAX_FAILS = 3          # so viele vorübergehende Fehler am Stück → Lauf beenden (Netz weg, yt-dlp kaputt …)
+REFRESH_GONE = ("gone", "novideo", "geo", "login")      # endgültig: gelöscht, privat, gesperrt → nie wieder fragen
+
+
+def _refresh_single(url: str) -> bool:
+    """Nur Einzelvideos: Sound-, Profil- und Listen-Links würde yt-dlp Video für Video durchgehen."""
+    from urllib.parse import urlparse
+    return not (avatar_url(url) or (_tiktok(url) and "/music/" in urlparse(url).path))
 
 
 def _refresh_todo() -> dict[str, list[dict]]:
-    """Link → Einträge (Video + MP3 vom selben Link = ein Aufruf). Ohne Link/Foto-Album: nichts abzufragen."""
+    """Link → Einträge (Video + MP3 vom selben Link = ein Aufruf). Ohne Link, Foto-Album, Bild: nichts abzufragen."""
     out: dict[str, list[dict]] = {}
     with LIB_LOCK:
         for e in LIB.values():
             url = str(e.get("url") or "")
-            if "meta_ok" not in e and not e.get("album") and re.match(r"https?://", url):
+            if "meta_ok" not in e and not e.get("album") and e.get("kind") not in ("image", "gif")                     and re.match(r"https?://", url) and _refresh_single(url):
                 out.setdefault(url, []).append(e)
-    return out
+    # verschiedene Videos unter einem Link (z. B. Playlist-Link alter Einträge) → Infos wären für alle falsch
+    return {u: es for u, es in out.items() if len({e.get("vid") for e in es if e.get("vid")}) <= 1}
 
 
-def refresh_meta_url(url: str, owner: dict | None) -> dict | None:
-    cmd = ytdlp_base() + ["--skip-download", "--no-warnings", "--ignore-config", "--no-playlist",
+def refresh_meta_url(url: str, owner: dict | None) -> tuple[dict | None, str]:
+    """(Infos, Fehlertext) – Infos None bei Fehler."""
+    cmd = ytdlp_base() + ["--skip-download", "--no-warnings", "--ignore-config", "--no-playlist", "-I", "1",
                           "--print", "%(.{tags,categories,description})j"]
     try:
         with tempfile.TemporaryDirectory() as tmp:
             cmd += cookie_args(Path(tmp), url, owner) + list(SETTINGS.get("extra_args") or []) + site_args(url) + ["--", url]
             r = run_tool(cmd, timeout=60, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
-    except (OSError, subprocess.TimeoutExpired):
-        return None
+    except subprocess.TimeoutExpired:
+        return None, "timed out"
+    except OSError as e:
+        return None, str(e)
     if r.returncode != 0:
-        return None
+        lines = r.stderr.decode("utf-8", "replace").strip().splitlines()
+        return None, next((l for l in reversed(lines) if l.startswith("ERROR:")), lines[-1] if lines else "unknown")
     try:
         meta = json.loads(r.stdout.decode("utf-8", "replace").strip().splitlines()[-1])
     except (ValueError, IndexError):
-        return None
-    return meta if isinstance(meta, dict) else None
+        return None, "no json"
+    return (meta, "") if isinstance(meta, dict) else (None, "no json")
 
 
 def refresh_meta_all() -> None:
-    todo = _refresh_todo()
-    REFRESH.update(running=True, done=0, failed=0, total=len(todo), stop=False)
+    REFRESH.update(running=True, done=0, failed=0, total=0, stop=False, error="")
     try:
+        todo = _refresh_todo()
+        REFRESH["total"] = len(todo)
+        fails = 0
         for i, (url, entries) in enumerate(todo.items()):
             if REFRESH["stop"]:
                 break
             if i:
                 time.sleep(REFRESH_WAIT)
-            meta = refresh_meta_url(url, USERS.get(entries[0].get("owner") or ""))
-            with LIB_LOCK:
-                for e in entries:
-                    if meta is None:
-                        e["meta_ok"] = -1
-                    else:
-                        e.update(tags=meta_tags(meta) or e.get("tags") or [], meta_ok=1,
-                                 desc=str(meta.get("description") or "")[:DESC_MAX] or e.get("desc") or "")
+            meta, msg = refresh_meta_url(url, USERS.get(entries[0].get("owner") or ""))
             if meta is None:
                 REFRESH["failed"] += 1
-            else:
+                kind = error_kind(msg)
+                if kind == "rate" or re.search(r"not a bot|confirm you.?re not", msg, re.I):
+                    REFRESH["error"] = explain(msg)       # YouTube/TikTok bremst → aufhören, später erneut
+                    break
+                if kind in REFRESH_GONE:
+                    with LIB_LOCK:
+                        for e in entries:
+                            e["meta_ok"] = -1
+                    lib_save_soon()
+                else:                                  # vorübergehend: beim nächsten Lauf nochmal
+                    fails += 1
+                    if fails >= REFRESH_MAX_FAILS:
+                        REFRESH["error"] = explain(msg)
+                        break
+                REFRESH["done"] += 1
+                continue
+            fails = 0
+            with LIB_LOCK:
                 for e in entries:
-                    coll_auto(e)
+                    e.update(tags=meta_tags(meta) or e.get("tags") or [], meta_ok=1,
+                             desc=str(meta.get("description") or "")[:DESC_MAX] or e.get("desc") or "")
+            for e in entries:
+                coll_auto(e)
             REFRESH["done"] += 1
             lib_save_soon()
     finally:
